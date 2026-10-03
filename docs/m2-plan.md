@@ -9,7 +9,7 @@ this file, then continue from **Next step** below.
 | Step | State |
 | --- | --- |
 | Phase 0. Environment and dependencies | In progress: `cloud/setup.sh` installs StoX 4.2 (RstoxData 2.2.1, RstoxBase 2.2.1, RstoxFramework 4.2.1); to be verified in a fresh `nansenbiomass-m1` session |
-| Phase 1. Official setup (structure script) | Not started |
+| Phase 1. Official setup (structure script) | `describe_stox_project()` ready (StoX 2.7 `project.xml` and StoX 3+ `project.json`); waiting for the laptop run on the official projects |
 | Phase 2. Configuration and entry point | Not started |
 | Phase 3. StoX template and runner | Not started |
 | Phase 4. Outputs and the airlock | Not started |
@@ -20,9 +20,18 @@ this file, then continue from **Next step** below.
 RstoxData 2.2.1, the latest in the StoX repository on that date (StoX 4.2). The versions
 appear in `cloud/setup.sh`, `DESCRIPTION` and here, and change together.
 
+**Finding (3 October 2026): StoX's 2.7 converter.** RstoxFramework 4.2.1 includes
+`convertStoX2.7To3()`. It does not translate the 2.7 process chain (filters, swept width
+and other settings); it fills a StoX 3 or later *template* project with the 2.7 project's
+process data: survey, stratum polygons, biotic PSUs, assignments and input files. For
+reproduction (Phase 6) this means our template can be run on the laptop with the official
+strata and PSUs, converted from the 2.7 project, which removes one source of difference.
+The settings themselves still come from the structure summary (Phase 1).
+
 **Next step.** Paste `cloud/setup.sh` into the `nansenbiomass-m1` environment's settings and
 verify it in a fresh session (setup logs newer than the session, StoX packages loading,
-tests passing). Meanwhile, Phase 1 and Phase 2 proceed; they do not need StoX.
+tests passing). The project lead runs `describe_stox_project()` on the official projects
+and shares the reviewed output. Meanwhile, Phase 2 proceeds.
 
 ## Context
 

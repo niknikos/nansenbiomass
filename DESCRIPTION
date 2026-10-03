@@ -17,6 +17,7 @@ Depends:
     R (>= 4.3)
 Imports:
     dplyr,
+    jsonlite,
     rlang,
     sf,
     stats,
