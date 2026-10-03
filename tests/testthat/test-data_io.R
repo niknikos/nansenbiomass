@@ -168,6 +168,33 @@ test_that("condition-factor warnings are reported by length-measurement type", {
   expect_equal(pla$n_failed[pla$field == "lengthmeasurement = B"], sum(in_shell))
 })
 
+test_that("duplicated catch samples with conflicting codes are reported as ambiguous", {
+  x <- sv$survey
+  x$catch$lengthmeasurement <- "E"
+  first <- x$catch[1, ]
+  n_fish <- sum(x$individual$catchsampleid == first$catchsampleid &
+                  x$individual$serialnumber == first$serialnumber)
+
+  # Same key, different code: no code is chosen for that catch sample's fish
+  conflict <- x
+  conflict$catch <- dplyr::bind_rows(x$catch, dplyr::mutate(first, lengthmeasurement = "C"))
+  v <- validate_survey(conflict)
+  expect_equal(status_of(v, "IO-KEY-03"), "fail")
+  pla <- v[v$check_id == "IO-PLA-01", ]
+  expect_setequal(pla$field, c("lengthmeasurement = E", "lengthmeasurement = ambiguous"))
+  expect_equal(pla$n_checked[pla$field == "lengthmeasurement = ambiguous"], n_fish)
+  expect_equal(sum(pla$n_checked), sum(is.finite(x$individual$individualweight /
+                                                    x$individual$length^3)))
+
+  # Same key, same code: the code is kept and the fish are counted once
+  same <- x
+  same$catch <- dplyr::bind_rows(x$catch, first)
+  pla <- validate_survey(same)
+  pla <- pla[pla$check_id == "IO-PLA-01", ]
+  expect_equal(pla$field, "lengthmeasurement = E")
+  expect_equal(pla$n_checked, nrow(x$individual))
+})
+
 test_that("anything that is not a short code is withheld from code reports", {
   expect_equal(safe_codes(c("12", "C", NA, "E-2", "a free text comment", "123456789")),
                c("12", "C", NA, "E-2", "<code withheld>", "<code withheld>"))

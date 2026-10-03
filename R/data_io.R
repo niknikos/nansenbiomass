@@ -697,11 +697,27 @@ validate_survey <- function(x) {
   if (all(c(table_keys("catch"), "lengthmeasurement") %in% names(ca)) &&
       all(table_keys("catch") %in% names(ind)) && nrow(ind) > 0L) {
     # One row per catch-sample key, so that duplicated keys (IO-KEY-03) cannot
-    # multiply the individuals in the join.
-    ca_lm <- ca[c(table_keys("catch"), "lengthmeasurement")]
-    ca_lm <- ca_lm[!duplicated(ca_lm[table_keys("catch")]), ]
-    lm <- dplyr::left_join(ind[table_keys("catch")], ca_lm, by = table_keys("catch"))
-    measurement <- safe_codes(lm$lengthmeasurement)
+    # multiply the individuals in the join. Where duplicated catch samples
+    # disagree on the measurement code, no code is chosen: their fish are
+    # reported as "ambiguous".
+    keys <- table_keys("catch")
+    ca_lm <- ca[c(keys, "lengthmeasurement")]
+    ca_lm$lengthmeasurement <- safe_codes(ca_lm$lengthmeasurement)
+    is_dup <- duplicated(ca_lm[keys]) | duplicated(ca_lm[keys], fromLast = TRUE)
+    if (any(is_dup)) {
+      resolved <- ca_lm[is_dup, ] |>
+        dplyr::summarise(
+          lengthmeasurement = if (dplyr::n_distinct(.data$lengthmeasurement) > 1L) {
+            "ambiguous"
+          } else {
+            dplyr::first(.data$lengthmeasurement)
+          },
+          .by = dplyr::all_of(keys)
+        )
+      ca_lm <- dplyr::bind_rows(ca_lm[!is_dup, ], resolved)
+    }
+    lm <- dplyr::left_join(ind[keys], ca_lm, by = keys)
+    measurement <- lm$lengthmeasurement
   }
   finite <- is.finite(k)
   groups <- sort(unique(measurement[finite]), na.last = TRUE)
