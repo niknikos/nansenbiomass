@@ -1,0 +1,236 @@
+# M2 plan: StoX swept-area pipeline
+
+Approved by the project lead on 3 October 2026. This file is the working plan for M2 and is
+kept current, so that any session can resume from it: read `CLAUDE.md`, `docs/spec.md` and
+this file, then continue from **Next step** below.
+
+## Status
+
+| Step | State |
+| --- | --- |
+| Phase 0. Environment and dependencies | In progress: `cloud/setup.sh` installs StoX 4.2 (RstoxData 2.2.1, RstoxBase 2.2.1, RstoxFramework 4.2.1); to be verified in a fresh `nansenbiomass-m1` session |
+| Phase 1. Official setup (structure script) | Not started |
+| Phase 2. Configuration and entry point | Not started |
+| Phase 3. StoX template and runner | Not started |
+| Phase 4. Outputs and the airlock | Not started |
+| Phase 5. Synthetic tests | Not started |
+| Phase 6. Reproduction on the laptop (D-11) | Not started |
+
+**Pinned StoX release (3 October 2026).** RstoxFramework 4.2.1, RstoxBase 2.2.1 and
+RstoxData 2.2.1, the latest in the StoX repository on that date (StoX 4.2). The versions
+appear in `cloud/setup.sh`, `DESCRIPTION` and here, and change together.
+
+**Next step.** Paste `cloud/setup.sh` into the `nansenbiomass-m1` environment's settings and
+verify it in a fresh session (setup logs newer than the session, StoX packages loading,
+tests passing). Meanwhile, Phase 1 and Phase 2 proceed; they do not need StoX.
+
+## Context
+
+M1 (data layer, synthetic generator, airlock) is merged (pull request #2, `b87d88b`). M2
+delivers `stox_sweptarea` (docs/spec.md, Sections 6 and 11): StoX projects generated from a
+versioned template and a survey configuration, run headless through RstoxFramework, with
+outputs in the Section 9 schema and staged through the airlock.
+
+**Acceptance (Section 11).** Synthetic tests pass, and the developer confirms manual
+reproduction of official estimates (D-11). Section 8 makes reproduction tier 1: a failure
+blocks all later work on that survey.
+
+**What we know now (3 October 2026):**
+
+- **StoX is not reachable.** RstoxFramework, RstoxBase and RstoxData are not on CRAN or P3M.
+  They come from stoxproject.github.io, which this environment's network policy blocks.
+  The base image already has gcc, g++, make and R's headers, so compiling RstoxData's C++
+  code should work once the host is allowed. **Decision: allow the host and create a new
+  environment.**
+- **The official projects are StoX 2.7.** You can provide `project.xml` files, the StoX 2.7
+  (Java) format; the versions behind the official figures are otherwise mixed or unknown.
+  RstoxFramework (3.x and 4.x) cannot run 2.7 projects, so M2 targets the current R-based
+  release, pinned exactly. Differences between StoX 2.7 and 4.x then become a risk to
+  reproducing the official figures (D-11), which we measure rather than assume away.
+- **The M2 agenda from M1** (`docs/m1-acceptance.md`, section 4): the inclusion rule across
+  two code conventions and deprecated codes, zero distances, raising factors, catch parts,
+  missing catch weights, and the condition-factor check (waiting on the NMD meanings of the
+  length-measurement codes).
+
+**Data protection.** A StoX 2.7 `project.xml` typically holds more than settings. Its
+process-data section can contain station-to-PSU assignments (station identifiers) and
+stratum polygons. The files therefore do not come to me. A structure script, run by you on
+the laptop, extracts what I need, withholds the rest, and you review its output before
+sending it. StoX project folders, inputs and outputs live only in the data zone.
+
+## Phase 0. Environment and dependencies
+
+**You:**
+- Add `stoxproject.github.io` to the environment's allowed domains, keeping the default list.
+- Create a new cloud environment. M0 showed that edits to an existing environment did not
+  reach new sessions.
+
+**Me:**
+- **Setup script.** Extend `cloud/setup.sh` to install the pinned StoX packages from
+  `https://stoxproject.github.io/repo` (compiled from source; their dependencies, such as
+  data.table, as P3M binaries), with stage timings and the same "diagnose, don't block"
+  behaviour as before.
+- **Exact versions.** Fix them as soon as the repository index is readable.
+- **Budget.** If the compile pushes setup past the five-minute budget, I report it before
+  going further.
+- **DESCRIPTION.** RstoxFramework, RstoxBase and RstoxData go in Suggests. `stox_sweptarea`
+  checks for them and for the pinned versions, and fails with a sanitised code otherwise.
+  The data and airlock modules stay usable without StoX.
+
+**Lockfile (you, on the laptop, as decided).** Set `renv::settings$snapshot.dev(TRUE)`,
+install the sdmTMB stack and the pinned StoX packages (with the StoX repository added to
+`repos`), run `renv::snapshot()`, and commit `renv.lock` and `renv/settings.json`. I'll give
+exact commands once the versions are fixed.
+
+**Branch.** The M1 pull request is merged, so I restart `claude/elegant-pascal-52da5l` from
+the latest `main`.
+
+## Phase 1. The official setup, without the files leaving the laptop
+
+- **`describe_stox_project(path, root)`**, exported and tested. It reads a StoX 2.7
+  `project.xml` or a StoX 3/4 `project.json` under the data root, and returns:
+  - the models and processes in order, with each process's function and its parameter
+    names;
+  - parameter values that are settings (methods, options, numbers such as bootstrap
+    iterations and seeds);
+  - for filter expressions, the **field names** they reference, e.g. `samplequality` or
+    `gearcondition`.
+
+  It withholds:
+  - the entire process-data section (PSU and station assignments, polygons);
+  - file paths;
+  - literal values inside filter expressions;
+  - anything that is not plainly a setting. Withheld items are shown as
+    `<withheld: path/expression/data>`.
+- **Errors** are sanitised as in `read_survey()`.
+- **Tests** use synthetic project files written for the purpose (obviously artificial),
+  including a planted station identifier and a planted polygon. The tests confirm that
+  neither appears in the output.
+- **You** run it on the official project of each survey you plan to reproduce, review the
+  output, and send it.
+
+From this we settle, per survey type: the inclusion filter (D-09), the swept width (fixed
+or door spread), how catch parts and raising are treated, length-distribution settings,
+and the bootstrap settings (D-10).
+
+## Phase 2. Survey configuration and entry point
+
+- **Configuration schema** (`configs/<survey>.yml`, read by `read_config()` and checked by
+  `validate_config()` with sanitised errors):
+  - survey label and year;
+  - biotic file(s) and stratum polygon file, as paths relative to `NANSEN_DATA_ROOT`;
+  - stratum names;
+  - inclusion rules (allowed `stationtype`, `samplequality` and `gearcondition` codes, and
+    a positive distance);
+  - swept width (`fixed_m`, or `trawldoorspread` with a stated fallback);
+  - species codes and quantities (biomass; abundance where lengths allow);
+  - bootstrap replicates and seed;
+  - the pinned StoX version;
+  - disclosure minimums, which may only be raised.
+- **`config_hash()`**: the MD5 of the configuration file, with base R `tools::md5sum`, so
+  no new dependency.
+- **`run_estimate(config)`**, the single entry point the person runs:
+  validate the configuration, then build the StoX project in
+  `<root>/stox/<survey>/<run_label>/`, run it, write full outputs to the data zone, build
+  the Section 9 table and the support table, and stage them with `stage_export()`. Each
+  step is wrapped in `with_sanitised_errors()`, with logs in `<root>/logs/`.
+- **`inclusion_summary(config)`** reports station counts kept and excluded by each rule, as
+  counts only. You can compare them with the station numbers in the survey report, which
+  is an early check on D-09 before any estimate exists.
+
+## Phase 3. StoX template and runner
+
+- **Template.** A versioned StoX 4.x project template in `inst/stox/sweptarea/`, structural
+  only (class C3). Code fills it from the configuration: input file locations, stratum
+  polygons, the filter built from the inclusion rules, swept width, quantities, and
+  bootstrap replicates and seed. It is never edited by hand.
+- **Processes.** These follow StoX's standard swept-area chain:
+  - Baseline: read biotic, convert to StoxBiotic, filter, define strata and survey, define
+    swept-area PSUs and layer, length distribution, swept-area density, mean density by
+    stratum, quantity.
+  - Analysis: bootstrap of PSUs within strata.
+  - Report: the bootstrap report.
+
+  The exact function names and arguments are verified against the installed RstoxFramework
+  and its documentation (reachable once the host is allowed). Where a StoX 2.7 setting has
+  no 4.x equivalent, I record the difference rather than guess.
+- **Versions.** Every run records the RstoxFramework, RstoxBase and RstoxData versions
+  (Section 6). They are appended to `code_version`, with the package version and Git
+  commit, inside the Section 9 whitelist.
+- **Conversion tool.** I'll also check whether RstoxFramework offers a conversion from
+  StoX 2.7 projects. I won't plan around it until it is confirmed.
+
+## Phase 4. Outputs and the airlock
+
+- **Section 9 rows.** The bootstrap report becomes Section 9 rows: method
+  `stox_sweptarea`; biomass in tonnes and abundance in millions, by stratum and in total;
+  CV; 95% percentile interval (`bootstrap_percentile_95`); `config_hash`; `code_version`;
+  `run_time` (UTC).
+- **Support table.** Computed from the filtered stations: stations and stations with a
+  positive catch, per stratum and species. It stays in the data zone.
+- **Staging.** `stage_export()` applies D-03 (minimum 5 stations, 3 positive, no
+  differencing). Nothing is written to `outbox/`; a person releases files.
+
+## Phase 5. Synthetic tests (tier 2), in the cloud
+
+- **Generator extensions.** `synth` writes stratum polygons in a StoX-readable format, and
+  optionally adds stations the inclusion rules must exclude: pelagic identification hauls
+  (`stationtype` 11, `samplequality` 14), aborted tows (`samplequality` 5, `gearcondition`
+  9) and zero distances. This was deferred from M1. The true values are unaffected.
+- **A synthetic configuration** in `configs/synthetic-example.yml`.
+- **Tests (`tests/testthat/test-stox_sweptarea.R`):**
+  - configuration validation and hashing;
+  - template filling (no unfilled placeholders, filter built correctly);
+  - exclusions working on the planted stations;
+  - conversion of the bootstrap report to the Section 9 schema;
+  - staging passing the airlock;
+  - **recovery of the truth:** on a synthetic survey, the StoX biomass estimate for a common
+    species contains the true biomass within its 95% bootstrap interval, with fixed seeds
+    and a small number of replicates so the tests stay fast.
+- **`R CMD check` in the scratchpad**, with the target `Status: OK`.
+
+## Phase 6. Reproduction on the laptop (D-11, acceptance)
+
+- **You** run `run_estimate()` for one or more surveys with official figures, starting with
+  one typical NANSIS demersal survey. Review the staged report, release passing outputs to
+  `outbox/`, and compare them with the official figures manually (D-08).
+- **What you report:** for each stratum and the total, whether the point estimate matches
+  to reporting precision and whether the CV is within bootstrap noise (D-11). Relative
+  differences are useful where they don't match. Released outputs in `outbox/` I can read
+  directly.
+- **If reproduction fails,** we diagnose in order: inclusion counts (`inclusion_summary`),
+  swept width, catch parts and raising, and StoX 2.7 versus 4.x differences. The findings
+  go into `docs/m2-acceptance.md`.
+
+## Files (main ones)
+
+| File | Change |
+| --- | --- |
+| `R/stox_sweptarea.R` | `describe_stox_project()`, template filling, runner, report conversion |
+| `R/config.R` (new) | `read_config()`, `validate_config()`, `config_hash()` |
+| `R/run_estimate.R` (new) | `run_estimate()`, `inclusion_summary()` |
+| `R/synth.R` | Stratum polygon export; excluded-station option |
+| `inst/stox/sweptarea/` | StoX 4.x project template |
+| `configs/synthetic-example.yml` | Synthetic configuration |
+| `tests/testthat/test-stox_sweptarea.R`, `test-config.R` | New tests |
+| `cloud/setup.sh`, `DESCRIPTION` | StoX installation; Suggests |
+| `docs/m2-acceptance.md` | Acceptance record and laptop procedure |
+
+## Verification
+
+- **Cloud, synthetic only:** the full test suite, including the truth-recovery test, and
+  `R CMD check` with `Status: OK`. Setup logs are checked as newer than the session, with
+  the StoX install timed.
+- **Laptop:** `testthat::test_local()`; the structure script on the official projects;
+  `inclusion_summary()` against report station counts; `run_estimate()` and the D-11
+  comparison.
+
+## Open questions, settled as the work reaches them
+
+- **The NMD meanings of the length-measurement codes** (for the condition-factor check and
+  for length distributions).
+- **Which survey or surveys to reproduce first**, and where their official figures are
+  published.
+- **D-11 and the version gap.** Whether a StoX 2.7 versus 4.x difference that we can
+  explain but cannot remove is acceptable under D-11. That is your decision once we see
+  the size of the difference.

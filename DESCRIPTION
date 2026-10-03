@@ -25,9 +25,13 @@ Imports:
     withr,
     xml2
 Suggests:
+    RstoxBase (>= 2.2.1),
+    RstoxData (>= 2.2.1),
+    RstoxFramework (>= 4.2.1),
     sdmTMB,
     terra,
     testthat (>= 3.0.0),
     yaml
+Additional_repositories: https://stoxproject.github.io/repo
 Config/testthat/edition: 3
 Config/roxygen2/version: 8.1.0

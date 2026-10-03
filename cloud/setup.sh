@@ -9,16 +9,22 @@
 #   3. Installs the spatial packages (sf, terra, sdmTMB) as precompiled Linux
 #      binaries from Posit Package Manager (P3M), and configures R so that later
 #      installs, including renv::restore(), also use binaries.
-#   4. If the repository already holds an renv.lock, restores it, which fills the
-#      renv cache so that restores in later sessions are fast.
+#   4. Installs the StoX R packages (RstoxData, RstoxBase, RstoxFramework) at pinned
+#      versions from the StoX repository: their dependencies as P3M binaries, the
+#      three packages from source (RstoxData contains C++ code).
+#   It no longer restores renv.lock: cloud sessions switch renv's autoloader off
+#   (.claude/settings.json), so the restored library was never used, and the
+#   restore failed at igraph (docs/m0-acceptance.md, section 3).
 #
 # Why it is lean
-#   Everything is installed as binaries, so no compilers or development headers
-#   are installed: an earlier version that installed libgdal-dev and r-base-dev
-#   (371 packages with their dependencies, against 135 for the runtime libraries)
-#   exceeded the roughly five-minute setup budget. The consequence is that this
-#   environment cannot compile R packages from source. That is not needed for M0
-#   or M1; revisit it at M2 (StoX packages) and M3 (sdmTMBexperiments).
+#   Everything except the StoX packages is installed as binaries, and no
+#   development headers are installed: an earlier version that installed
+#   libgdal-dev and r-base-dev (371 packages with their dependencies, against 135
+#   for the runtime libraries) exceeded the roughly five-minute setup budget. The
+#   base image already provides gcc, g++ and make, and R ships its own headers,
+#   which is enough to compile RstoxData's C++ code; Fortran is not available.
+#   Installing the three StoX packages from source took 97 s on 4 cores
+#   (3 October 2026; RstoxData 47 s, RstoxBase 14 s, RstoxFramework 37 s).
 #
 # How to use it
 #   Paste this file into the environment's "Setup script" field (cloud environment
@@ -45,8 +51,8 @@
 #   rspm-sync.rstudio.com                    binary R package files: p3m.dev answers each
 #                                            download with a redirect (HTTP 307) to this host
 #   packagemanager.posit.co                  former P3M address, still used by some tools
+#   stoxproject.github.io                    StoX R packages (from M2)
 #   Needed only from later milestones:
-#   stoxproject.github.io                    StoX R packages (M2)
 #   github.com, api.github.com,
 #   codeload.github.com                      sdmTMBexperiments from GitHub (M3; default list)
 #
@@ -79,6 +85,12 @@ P3M_REPO="https://p3m.dev/cran/__linux__/${UBUNTU_CODENAME}/latest"
 # codetools is used by R CMD check for its code analysis.
 TOOL_PACKAGES="renv testthat roxygen2 yaml codetools"
 SPATIAL_PACKAGES="sf terra sdmTMB"
+# StoX: the release used by the pipeline (StoX 4.2), pinned exactly. Change these
+# together with DESCRIPTION and docs/m2-plan.md, never one alone.
+STOX_REPO="https://stoxproject.github.io/repo/src/contrib"
+STOX_PACKAGES="RstoxData_2.2.1 RstoxBase_2.2.1 RstoxFramework_4.2.1"
+# Their CRAN dependencies, installed as P3M binaries before the source builds.
+STOX_DEPS="data.table Rcpp stringi units xml2 geojsonsf ggplot2 jsonlite lwgeom maps jsonvalidate ncdf4 scales semver"
 # Runtime libraries only; the binaries from P3M are built against these.
 SPATIAL_LIBS=(libgdal34t64 libgeos-c1t64 libproj25 libudunits2-0)
 
@@ -94,12 +106,13 @@ stage() { printf '\n[setup %4ds] %s\n' "$((SECONDS - start))" "$*"; }
 MISSING_PACKAGES=""
 DIAGNOSED=""
 
-# Installs the R packages named in $1 and fails if any is missing afterwards
-# (install.packages() itself only warns).
+# Installs those of the R packages named in $1 that are not yet installed, and
+# fails if any is missing afterwards (install.packages() itself only warns).
 install_r_packages() {
   R_PACKAGES="$1" Rscript -e '
     pkgs <- strsplit(Sys.getenv("R_PACKAGES"), " ", fixed = TRUE)[[1]]
-    install.packages(pkgs)
+    todo <- setdiff(pkgs, rownames(installed.packages()))
+    if (length(todo) > 0) install.packages(todo)
     missing <- setdiff(pkgs, rownames(installed.packages()))
     if (length(missing) > 0) {
       stop("Not installed: ", paste(missing, collapse = ", "))
@@ -232,8 +245,30 @@ if ! install_r_packages "$SPATIAL_PACKAGES" >"$LOG_DIR/r-spatial.log" 2>&1; then
   diagnose_downloads
 fi
 
+stage "Installing StoX dependencies (binaries)"
+if ! install_r_packages "$STOX_DEPS" >"$LOG_DIR/r-stox-deps.log" 2>&1; then
+  echo "Installing the StoX dependencies failed. Last log lines:"
+  tail -n 15 "$LOG_DIR/r-stox-deps.log"
+  MISSING_PACKAGES="$MISSING_PACKAGES $STOX_DEPS"
+  diagnose_downloads
+fi
+
+stage "Installing StoX packages from source: ${STOX_PACKAGES}"
+for pkg in $STOX_PACKAGES; do
+  if ! MAKEFLAGS="-j$(nproc)" STOX_URL="${STOX_REPO}/${pkg}.tar.gz" Rscript -e '
+    install.packages(Sys.getenv("STOX_URL"), repos = NULL, type = "source")
+    name <- sub("_.*$", "", basename(Sys.getenv("STOX_URL")))
+    if (!requireNamespace(name, quietly = TRUE)) stop("Not installed: ", name)
+  ' >>"$LOG_DIR/r-stox.log" 2>&1; then
+    echo "Installing ${pkg} failed. Last log lines:"
+    tail -n 15 "$LOG_DIR/r-stox.log"
+    MISSING_PACKAGES="$MISSING_PACKAGES ${pkg%%_*}"
+    break
+  fi
+done
+
 stage "Checking the installation"
-R_PACKAGES="$TOOL_PACKAGES $SPATIAL_PACKAGES" Rscript -e '
+R_PACKAGES="$TOOL_PACKAGES $SPATIAL_PACKAGES RstoxData RstoxBase RstoxFramework" Rscript -e '
   pkgs <- strsplit(Sys.getenv("R_PACKAGES"), " ", fixed = TRUE)[[1]]
   for (p in pkgs) {
     if (!requireNamespace(p, quietly = TRUE)) {
@@ -251,24 +286,9 @@ R_PACKAGES="$TOOL_PACKAGES $SPATIAL_PACKAGES" Rscript -e '
   }
 ' || echo "WARNING: the installation check itself failed; see the lines above."
 
-# Restoring the lockfile is useful but not essential here: a failure is reported
-# and the session still starts, so it can be investigated from within it.
-REPO_DIR=""
-for d in "${NANSENBIOMASS_DIR:-}" "$PWD" /home/user/nansenbiomass; do
-  if [ -n "$d" ] && [ -f "$d/DESCRIPTION" ] &&
-    grep -q '^Package: nansenbiomass$' "$d/DESCRIPTION"; then
-    REPO_DIR="$d"
-    break
-  fi
-done
-if [ -n "$REPO_DIR" ] && [ -f "$REPO_DIR/renv.lock" ] &&
-  Rscript -e 'quit(status = !requireNamespace("renv", quietly = TRUE))'; then
-  stage "Restoring renv.lock in ${REPO_DIR}"
-  (cd "$REPO_DIR" && Rscript -e 'renv::restore(prompt = FALSE)') ||
-    echo "WARNING: renv::restore() failed; run it in the session to see why."
-else
-  stage "No renv.lock found; skipping renv::restore()"
-fi
+# renv.lock is not restored here: cloud sessions switch renv's autoloader off, so
+# R uses the packages installed above, and the lockfile governs the laptop
+# (CLAUDE.md; docs/m0-acceptance.md, section 3).
 
 stage "Done"
 if [ -n "$MISSING_PACKAGES" ]; then
