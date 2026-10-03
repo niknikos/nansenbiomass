@@ -5,4 +5,5 @@
 #' (Section 4).
 #'
 #' @keywords internal
+#' @importFrom rlang .data
 "_PACKAGE"

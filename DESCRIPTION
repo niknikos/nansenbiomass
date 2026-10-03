@@ -1,6 +1,6 @@
 Package: nansenbiomass
 Title: Reproducible Survey Biomass Reconstruction with StoX and sdmTMB
-Version: 0.0.0.9000
+Version: 0.0.0.9001
 Authors@R:
     person("Nikolaos", "Nikolioudakis", , "nikolaos.nikolioudakis@hi.no",
            role = c("aut", "cre"))
@@ -15,10 +15,19 @@ Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Depends:
     R (>= 4.3)
+Imports:
+    dplyr,
+    rlang,
+    sf,
+    stats,
+    tibble,
+    utils,
+    withr,
+    xml2
 Suggests:
     sdmTMB,
-    sf,
     terra,
     testthat (>= 3.0.0),
     yaml
 Config/testthat/edition: 3
+Config/roxygen2/version: 8.1.0
