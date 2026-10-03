@@ -6,18 +6,21 @@ Milestone M1 (data layer, synthetic generator, airlock) has two acceptance check
 1. Real and synthetic data pass the same schema checks.
 2. The disclosure check rejects a deliberately disclosive export.
 
-Check 2 and the synthetic half of check 1 run in a cloud session on synthetic data and
-passed on 29 September 2026 (rerun on 3 October 2026 after the schema additions). The real
-half of check 1 needs real data, which never exist in the cloud: a person runs it on the
-laptop, outside Claude Code (section 3 below). Two real surveys have passed it so far
-(section 3, "Laptop result"). M1 is not merged until the laptop step is complete and a
-person has reviewed the code.
+**Both checks are met** (3 October 2026).
+
+- Check 2 and the synthetic half of check 1 run in a cloud session on synthetic data
+  (section 2).
+- The real half of check 1 needs real data, which never exist in the cloud. The project
+  lead ran it on the laptop, outside Claude Code, on the whole archive of 416 files
+  (section 3), under the criterion as revised on 3 October 2026 (section 3, step 4).
+
+M1 is not merged until a person has reviewed the code.
 
 ## 1. What M1 delivers
 
 | Module | Exported functions | Purpose |
 | --- | --- | --- |
-| `data_io` | `survey_schema()`, `read_biotic()`, `read_survey()`, `describe_biotic()`, `validate_survey()`, `data_root()` | Read NMDBiotic v3 XML into four tables; describe a file's structure without values; validate any survey against the schema |
+| `data_io` | `survey_schema()`, `read_biotic()`, `read_survey()`, `describe_biotic()`, `validate_survey()`, `check_biotic()`, `data_root()` | Read NMDBiotic v3 XML into four tables; describe a file's structure without values; validate any survey against the schema |
 | `synth` | `synth_design()`, `synth_survey()`, `synth_density()`, `write_biotic()` | Generate synthetic surveys from known fields, with their true biomass and abundance; write them as NMDBiotic XML |
 | `disclosure` | `estimate_schema()`, `check_disclosure()`, `stage_export()`, `synth_export()` | Check a candidate export against D-03 and stage it for a person to release |
 
@@ -52,18 +55,18 @@ Design points a reviewer should know:
 
 | Item | Value |
 | --- | --- |
-| Date | 29 September 2026; rerun 3 October 2026 |
-| Code | commits `90a04d8`, `43fdfb4` and `caf205f`, then the schema additions of 3 October, on `claude/elegant-pascal-52da5l` |
+| Date | 29 September 2026; rerun 3 October 2026 after each change |
+| Code | branch `claude/elegant-pascal-52da5l`, last code commit `3f07e23` |
 | Cloud environment | `nansenbiomass-m0`; setup logs newer than the session, so the current `cloud/setup.sh` ran |
 | R and packages | R 4.6.1; the versions recorded in the M0 record and pinned in `renv.lock` |
 | New dependencies | None outside `renv.lock`: dplyr, rlang, sf, tibble, withr and xml2 moved to Imports |
 
 `R CMD build` and `R CMD check --no-manual` ran in the session's scratchpad, not in the
 working tree. Session charset UTF-8; **`Status: OK`**, no NOTE, WARNING or ERROR; examples
-ran; tests `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 165 ]` on 29 September and
-`[ FAIL 0 | WARN 0 | SKIP 0 | PASS 181 ]` after the schema additions of 3 October. The first
-commit, checked on its own, also passed its tests, with one NOTE: `utils` is declared before
-the airlock, which uses it, arrives in the second.
+ran; tests `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 165 ]` on 29 September and, after the
+changes of 3 October, `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 188 ]`. The first commit, checked on
+its own, also passed its tests, with one NOTE: `utils` is declared before the airlock, which
+uses it, arrives in the second.
 
 **Check 1, synthetic side.** A synthetic survey (seed 1: 45 stations, 118 catch samples,
 4,767 individuals, as generated since 3 October) written to NMDBiotic XML and read back
@@ -132,14 +135,98 @@ These steps run in R on the laptop, outside Claude Code. Nothing from them is co
    Please do not paste log files, values, file paths or survey identifiers.
 
 4. If the reader or a check fails, the code is adapted from those names and counts, and
-   the steps are repeated. **Check 1 passes** when real and synthetic surveys return the
-   same set of checks with no `fail`. Warnings are reviewed case by case: some, such as
-   several catch parts for one species, are expected in real data.
+   the steps are repeated. Warnings are reviewed case by case: some, such as several catch
+   parts for one species, are expected in real data.
 
-### Laptop result
+   **Criterion for check 1, as revised on 3 October 2026.** Check 1 passes when:
+
+   - (a) `validate_survey()` runs the same checks on real and synthetic surveys;
+   - (b) every real file is read without error;
+   - (c) every structural check passes: `IO-STR-*`, `IO-TYP-*`, `IO-CMP-02`,
+     `IO-KEY-01` to `IO-KEY-03` and `IO-REF-*`.
+
+   Value checks (`IO-VAL-*`) that fail on real data are recorded as data-quality findings,
+   by count, and handled by the M2 inclusion rules; they do not block M1.
+
+   *History.* The criterion first read "real and synthetic surveys return the same set of
+   checks with no `fail`". The archive run showed value failures in real surveys (towed
+   distances, depths, door spreads and lengths that are not positive, and dates outside the
+   mission year). These describe the source data, which the package must never alter, so
+   no version of the code could meet the original wording. The purpose of the check is to
+   show that the data layer handles real data correctly, and (a) to (c) test exactly that.
+   The project lead approved the revision, and the reclassification of `IO-KEY-04` as a
+   warning, on 3 October 2026, after seeing the results.
+
+### Laptop result: whole archive (416 files)
+
+Run by the project lead on 3 October 2026 at commit `866dee3`, with `check_biotic()` and a
+resumable loop that saves each file's result in the data zone. Surveys are labelled
+`real survey 001` to `416` in file-name order; the key from labels to files stays on the
+laptop.
+
+| Item | Result |
+| --- | --- |
+| Files | 416, all read without error |
+| Format | NMDBiotic v3.1 in every file |
+| Surveys with biomass stations (`samplequality` 12) | 170 |
+| Structural checks | All pass in every file, except `IO-KEY-04` (repeated specimen numbers) in 11 surveys, now a warning (below) |
+
+**Value checks that failed** (totals over all surveys):
+
+| Check | Surveys | Records failing | Of records checked |
+| --- | --- | --- | --- |
+| `IO-VAL-04` towed distance not positive | 69 | 928 stations | 7,548 |
+| `IO-VAL-06` bottom depth not positive | 24 | 90 stations | 1,924 |
+| `IO-VAL-07` station date outside the mission year | 8 | 22 stations | 760 |
+| `IO-VAL-08` door spread not positive | 4 | 13 stations | 253 |
+| `IO-VAL-05` length not positive | 8 | 231 fish | 390,243 |
+
+**Warnings** (totals over all surveys):
+
+| Check | Surveys | Records flagged | Of records checked |
+| --- | --- | --- | --- |
+| `IO-CAT-01` several catch samples per species and station | 361 | 27,719 | 614,628 |
+| `IO-CMP-01` catch sample without `catchweight` | 252 | 17,127 | 494,547 |
+| `IO-CMP-01` catch sample without `catchcategory` | 1 | 1 | 624 |
+| `IO-RAI-01` length-sample count above catch count | 192 | 1,064 | 76,828 |
+| `IO-RAI-02` length-sample weight above catch weight | 156 | 995 | 61,979 |
+| `IO-RAI-03` measured fish differ from length-sample count | 96 | 1,421 | 39,816 |
+| `IO-RAI-04` raising factor other than 1 | 41 | 35,800 | 85,562 |
+| `IO-UNIT-01` length above 3 m | 9 | 14 | 101,556 |
+| `IO-KEY-04` repeated specimen numbers (failure at the time of the run) | 11 | 6,882 | 347,110 |
+
+`IO-PLA-01` (condition factor outside 0.02 to 10), by length-measurement code:
+
+| Code | Surveys flagged | Fish flagged | Of fish checked |
+| --- | --- | --- | --- |
+| E | 47 | 4,681 | 414,120 |
+| no code | 36 | 47,725 | 149,509 |
+| C | 32 | 29,899 | 31,405 |
+| B | 34 | 4,437 | 19,130 |
+| L | 10 | 347 | 359 |
+| J | 4 | 27 | 1,886 |
+| K, M, A, G, H, F, I, Z | 1 to 3 each | 69 in all | 3,030 |
+
+The 14 lengths above 3 m are isolated (one to five per survey, among about 102,000 fish in
+those surveys): they look like individual entry errors, not centimetres recorded as metres,
+which would flag whole catch samples.
+
+**Reader verification for `IO-KEY-04`.** For the survey with the most repeated specimen
+numbers, each fish's catch sample and station were also read directly from its parent
+elements, which is slow but cannot misassign a fish. Both methods gave 25,461 fish, no fish
+assigned differently, and the same 1,363 repeated keys. The repetition is therefore in the
+source files: in most affected surveys, distinct fish share a specimen number within a
+catch sample, a numbering practice that also explains why few rows are fully identical.
+Each record is kept as a separate fish; `IO-KEY-04` is now a warning.
+
+**Outcome.** Under the revised criterion (step 4), acceptance check 1 is met: the same checks
+run on real and synthetic data, all 416 files are read without error, and every structural
+check passes. The value failures are carried into the M2 agenda (section 4).
+
+### Laptop result: first two surveys
 
 Reported by the project lead, up to 3 October 2026, run at commit `a3341c0` (48 checks at
-that version). Surveys are labelled, not named.
+that version). These runs came before the archive run and led to the schema additions.
 
 | | Real survey A | Real survey B |
 | --- | --- | --- |
@@ -152,12 +239,12 @@ that version). Surveys are labelled, not named.
 | `IO-RAI-03` measured fish differ from length-sample count | pass | warn, 1 of 777 |
 | `IO-CMP-01` catch sample without `catchweight` | warn, 1 of 755 | warn, 9 of 3,435 |
 
-**Outcome so far.** Both surveys pass the same checks as the synthetic surveys, with no
-failure and no change to the reader. Acceptance check 1 is met for these two surveys; the
-remaining files in the data zone are to be run before M1 is closed.
+Both surveys passed the same checks as the synthetic surveys, with no failure and no
+change to the reader.
 
 **Tests on the laptop.** `testthat::test_local()` at commit `03988a1` (Windows, lockfile
-library): `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 181 ]`.
+library): `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 181 ]`. Later commits were tested in the cloud;
+a final laptop run before merging is advisable.
 
 **Adaptations made after these runs (3 October 2026).** No check failed, so nothing had to
 be fixed. The warnings and the list of fields outside the schema led to these additions:
@@ -187,31 +274,54 @@ all stations.
 - `catchproducttype` is 1 on every catch sample, and `sampleproducttype` is 1 wherever it
   is filled.
 
-**Still open for M2.** Whether the multi-part catches (`IO-CAT-01`) are additive; whether
-`catchweight` already holds the raised catch or the subsample weight to be multiplied by
-`raisingfactor` (a third of catch samples in survey B are raised, so this changes the
-biomass materially; it is to be settled by reproducing the official estimates, D-11); how
-product types enter the catch totals; and the exact inclusion rule (D-09; see
-[`nansis-codes.md`](nansis-codes.md)).
-
 **renv on the laptop.** `renv::status()` reported packages recorded but not used (the
 Suggests and development stack, under `snapshot.type = "implicit"`), the sdmTMB stack not
 installed, and patch-level differences in R's recommended packages and `s2`. None affects
 M1. Decision of 3 October 2026: the lockfile is tidied at the start of M2 (keep the
 Suggests stack pinned with `snapshot.dev`, install the sdmTMB stack, snapshot).
 
-## 4. Limitations
+## 4. Data-quality agenda for M2
 
-- **Two real files so far.** Both read without adaptation, but files from other years or
-  vessels may use fields, codes or versions that these two do not. Section 3 exists to find
-  this out without the data leaving the laptop.
+The archive run gives the starting points for the StoX pipeline. Each is to be settled
+against the rules behind the official estimates (D-09, D-11), not decided here.
+
+1. **Inclusion rule (D-09).** The archive mixes two station-code conventions: general NMD
+   codes (`samplequality` 1 on about 29,800 stations in 348 surveys) and NANSIS codes
+   (`samplequality` 12 in 170 surveys, 14 in 174). Deprecated codes still occur
+   (`samplequality` 100; `gearcondition` 101 to 106 on about 2,700 stations), and gear-trial
+   stations (`stationtype` 2) number about 1,200. See [`nansis-codes.md`](nansis-codes.md).
+2. **Towed distance.** 928 stations in 69 surveys have a distance that is not positive. Check
+   whether any are biomass stations; if so, whether the distance can be recovered from the
+   log or the positions.
+3. **Raising.** 41 surveys raise catches (42% of their catch samples). Establish whether
+   `catchweight` holds the raised catch or the subsample weight to be multiplied by
+   `raisingfactor`.
+4. **Catch parts.** 4.5% of species-by-station combinations, in 361 surveys, have several
+   catch samples. Establish when parts are disjoint (to be summed) and when they overlap.
+5. **Missing catch weights.** 3.5% of catch samples (252 surveys) have no `catchweight`.
+   Decide how they enter the totals (excluded, or weight from count).
+6. **Condition-factor check.** Restrict it to the length-measurement type for fish total
+   length (probably E) once the NMD meanings of the codes are confirmed; report the others
+   for information.
+7. **Minor.** Depths, door spreads, dates and lengths that fail the value checks; the raising
+   inputs that disagree (1 to 3% of records checked); 14 lengths above 3 m; repeated
+   specimen numbers in 11 surveys. To be reviewed with the people who maintain the data.
+
+## 5. Limitations
+
+- **Real data checked once, with this code version.** All 416 files read without
+  adaptation; new files, or files from before the current archive, may still differ.
+  Section 3 can be rerun at any time without the data leaving the laptop.
 - **No schema (XSD) validation.** Files are read by element name. A file that is valid XML
   but departs from the XSD is caught only through the checks above.
-- **Reading speed.** About 2 seconds for 5,000 individuals in the cloud. Large surveys will
-  take longer; this can be optimised if it matters.
+- **Reading speed.** The reader was made about seven times faster on 3 October 2026, after
+  a first archive run took over five hours; a large synthetic file (about 9,000 fish) now
+  reads in under a second in the cloud. The duration of the archive run with the faster
+  reader was not recorded.
 - **The positive-station minimum of 3** was proposed with this milestone and confirmed by
-  the project lead on 3 October 2026; configurations may raise it. Positive stations are counted by species code
-  (`catchcategory`), and the same counts apply to biomass and abundance cells.
+  the project lead on 3 October 2026; configurations may raise it. Positive stations are
+  counted by species code (`catchcategory`), and the same counts apply to biomass and
+  abundance cells.
 - **Differencing** is checked within one survey, year, species, method and quantity.
   Differencing across quantities, methods or later releases is not checked.
 - **The support table** (stations and positive stations per cell) is produced by
