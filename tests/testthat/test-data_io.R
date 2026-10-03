@@ -69,6 +69,18 @@ test_that("read_survey() and describe_biotic() work under a data root", {
   expect_false(dir.exists(file.path(root, "logs")))
 })
 
+test_that("check_biotic() gives the same description and validation in one pass", {
+  root <- withr::local_tempdir()
+  write_biotic(sv, file.path(root, "synthetic.xml"))
+  res <- check_biotic("synthetic.xml", root = root)
+  expect_equal(res$description, describe_biotic("synthetic.xml", root = root))
+  expect_equal(as.data.frame(res$validation),
+               as.data.frame(validate_survey(read_survey("synthetic.xml", root = root))))
+  writeLines("<broken", file.path(root, "broken.xml"))
+  cnd <- expect_error(check_biotic("broken.xml", root = root), class = "nansenbiomass_error")
+  expect_equal(cnd$nb_code, "IO-READ-01")
+})
+
 test_that("corrupted surveys fail the expected checks", {
   v <- validate_survey(corrupt("station", function(d) dplyr::bind_rows(d, d[1, ])))
   expect_equal(status_of(v, "IO-KEY-02"), "fail")

@@ -153,36 +153,85 @@ coerce_field <- function(x, type) {
   list(value = out, n_failed = sum(!is.na(x) & is.na(out)))
 }
 
-# Reads the attribute or child-element text of `field` for every node.
-node_field <- function(nodes, field, source) {
-  if (source == "attribute") {
-    xml2::xml_attr(nodes, field)
-  } else {
-    child <- xml2::xml_find_first(nodes, field)
-    out <- xml2::xml_text(child)
-    out[is.na(child)] <- NA_character_
-    out
-  }
+# ---- Parsing ----------------------------------------------------------------
+#
+# A file is parsed once into one entry per NMDBiotic level: its nodes, their
+# child elements (name, parent index, and text for leaf elements) and the index
+# of each node's parent. Everything is vectorised over nodes. An earlier version
+# stripped the namespace and looked each field up node by node, which took most
+# of the reading time on large files.
+
+biotic_levels <- c("mission", "fishstation", "catchsample", "individual")
+
+nmdbiotic_namespace <- function(doc) {
+  ns <- xml2::xml_ns(doc)
+  hit <- unname(ns[grepl("nmdbiotic", ns, ignore.case = TRUE)])
+  if (length(hit) == 0L) NA_character_ else hit[[1]]
 }
 
-# Builds one table from the nodes of one NMDBiotic level. `ancestors` lists, from
-# nearest to furthest, the levels whose keys are inherited.
-level_table <- function(doc, table, level, ancestors, failures) {
-  s <- biotic_schema()
-  nodes <- xml2::xml_find_all(doc, paste0("//", level))
-  cols <- list()
-  up <- nodes
-  for (anc in ancestors) {
-    # One parent per node: xml_parent() would drop duplicates.
-    up <- xml2::xml_find_first(up, "..")
-    anc_fields <- s[s$table == anc & s$key, ]
-    for (i in seq_len(nrow(anc_fields))) {
-      cols[[anc_fields$field[i]]] <- node_field(up, anc_fields$field[i], "attribute")
+parse_biotic <- function(file) {
+  doc <- xml2::read_xml(file)
+  namespace <- nmdbiotic_namespace(doc)
+  if (is.na(namespace) || !grepl("/v3", namespace)) {
+    nb_abort("IO-READ-02", "The file is not an NMDBiotic v3 document.")
+  }
+  ns <- xml2::xml_ns(doc)
+  prefix <- names(ns)[match(namespace, unname(ns))]
+  levels <- lapply(biotic_levels, function(level) {
+    nodes <- xml2::xml_find_all(doc, sprintf("//%s:%s", prefix, level), ns)
+    kids <- xml2::xml_children(nodes)
+    parent <- rep.int(seq_along(nodes), xml2::xml_length(nodes))
+    if (length(parent) != length(kids)) {
+      nb_abort("IO-READ-04", "Unexpected element nesting in the biotic file.")
     }
+    leaf <- xml2::xml_length(kids) == 0L
+    text <- rep(NA_character_, length(kids))
+    text[leaf] <- xml2::xml_text(kids[leaf])
+    list(nodes = nodes, kid_name = xml2::xml_name(kids), kid_parent = parent,
+         kid_leaf = leaf, kid_text = text)
+  })
+  names(levels) <- biotic_levels
+  # Each node's parent, from the parent level's children in document order.
+  for (i in seq_along(biotic_levels)[-1]) {
+    up <- levels[[i - 1L]]
+    parent <- up$kid_parent[up$kid_name == biotic_levels[i]]
+    if (length(parent) != length(levels[[i]]$nodes)) {
+      nb_abort("IO-READ-04", "Unexpected element nesting in the biotic file.")
+    }
+    levels[[i]]$parent <- parent
+  }
+  list(doc = doc, namespace = namespace, levels = levels)
+}
+
+# Text of one attribute or leaf child element for every node of a level.
+level_values <- function(lv, field, source) {
+  if (source == "attribute") {
+    return(xml2::xml_attr(lv$nodes, field))
+  }
+  out <- rep(NA_character_, length(lv$nodes))
+  hit <- which(lv$kid_name == field & lv$kid_leaf)
+  out[lv$kid_parent[hit]] <- lv$kid_text[hit]
+  out
+}
+
+# Builds one table from a parsed file, inheriting the keys of its ancestors.
+level_table <- function(parsed, table, failures) {
+  s <- biotic_schema()
+  li <- match(table, survey_tables)
+  lv <- parsed$levels[[li]]
+  cols <- list()
+  idx <- lv$parent
+  for (ai in rev(seq_len(li - 1L))) {
+    anc <- parsed$levels[[ai]]
+    anc_keys <- s$field[s$table == survey_tables[ai] & s$key]
+    for (f in anc_keys) {
+      cols[[f]] <- xml2::xml_attr(anc$nodes, f)[idx]
+    }
+    idx <- anc$parent[idx]
   }
   own <- s[s$table == table, ]
   for (i in seq_len(nrow(own))) {
-    cols[[own$field[i]]] <- node_field(nodes, own$field[i], own$source[i])
+    cols[[own$field[i]]] <- level_values(lv, own$field[i], own$source[i])
   }
   cols <- cols[table_columns(table)]
   n_failed <- integer(0)
@@ -195,33 +244,19 @@ level_table <- function(doc, table, level, ancestors, failures) {
   tibble::as_tibble(cols)
 }
 
-nmdbiotic_namespace <- function(doc) {
-  ns <- xml2::xml_ns(doc)
-  hit <- unname(ns[grepl("nmdbiotic", ns, ignore.case = TRUE)])
-  if (length(hit) == 0L) NA_character_ else hit[[1]]
-}
-
-read_biotic_file <- function(file) {
-  doc <- xml2::read_xml(file)
-  namespace <- nmdbiotic_namespace(doc)
-  if (is.na(namespace) || !grepl("/v3", namespace)) {
-    nb_abort("IO-READ-02", "The file is not an NMDBiotic v3 document.")
-  }
-  xml2::xml_ns_strip(doc)
+survey_from_parsed <- function(parsed) {
   failures <- new.env()
-  tables <- list(
-    mission = level_table(doc, "mission", "mission", character(0), failures),
-    station = level_table(doc, "station", "fishstation", "mission", failures),
-    catch = level_table(doc, "catch", "catchsample", c("station", "mission"), failures),
-    individual = level_table(
-      doc, "individual", "individual", c("catch", "station", "mission"), failures
-    )
-  )
+  tables <- lapply(survey_tables, function(tbl) level_table(parsed, tbl, failures))
+  names(tables) <- survey_tables
   fail_tbl <- dplyr::bind_rows(lapply(survey_tables, function(tbl) {
     n <- failures[[tbl]]
     tibble::tibble(table = tbl, field = names(n), n_failed = unname(n))
   }))
-  list(tables = tables, failures = fail_tbl, namespace = namespace)
+  list(tables = tables, failures = fail_tbl, namespace = parsed$namespace)
+}
+
+read_biotic_file <- function(file) {
+  survey_from_parsed(parse_biotic(file))
 }
 
 new_survey <- function(tables, synthetic = FALSE, coercion_failures = NULL,
@@ -354,24 +389,20 @@ describe_biotic <- function(path, root = data_root()) {
 }
 
 describe_biotic_file <- function(file) {
-  doc <- xml2::read_xml(file)
-  namespace <- nmdbiotic_namespace(doc)
-  xml2::xml_ns_strip(doc)
-  all_names <- xml2::xml_name(xml2::xml_find_all(doc, "//*"))
+  describe_parsed(parse_biotic(file))
+}
+
+describe_parsed <- function(parsed) {
+  all_names <- xml2::xml_name(xml2::xml_find_all(parsed$doc, "//*"))
   elements <- tibble::tibble(element = all_names) |>
     dplyr::count(.data$element, name = "n")
   s <- biotic_schema()
-  levels <- c("mission", "fishstation", "catchsample", "individual")
-  fields <- dplyr::bind_rows(lapply(levels, function(level) {
-    nodes <- xml2::xml_find_all(doc, paste0("//", level))
-    if (length(nodes) == 0L) return(NULL)
-    attrs <- unlist(lapply(xml2::xml_attrs(nodes), names))
-    kids <- xml2::xml_children(nodes)
-    kid_names <- xml2::xml_name(kids)
-    kid_filled <- nzchar(trimws(xml2::xml_text(kids))) &
-      xml2::xml_length(kids) == 0L
-    kid_leaf <- xml2::xml_length(kids) == 0L
-    el <- tibble::tibble(field = kid_names[kid_leaf], filled = kid_filled[kid_leaf]) |>
+  fields <- dplyr::bind_rows(lapply(biotic_levels, function(level) {
+    lv <- parsed$levels[[level]]
+    if (length(lv$nodes) == 0L) return(NULL)
+    attrs <- unlist(lapply(xml2::xml_attrs(lv$nodes), names))
+    filled <- !is.na(lv$kid_text) & nzchar(trimws(lv$kid_text))
+    el <- tibble::tibble(field = lv$kid_name[lv$kid_leaf], filled = filled[lv$kid_leaf]) |>
       dplyr::summarise(
         n_present = dplyr::n(), n_filled = sum(.data$filled), .by = "field"
       ) |>
@@ -382,7 +413,7 @@ describe_biotic_file <- function(file) {
     schema_fields <- s$field[s$level == level]
     out <- dplyr::bind_rows(at, el)
     out$level <- level
-    out$n_records <- length(nodes)
+    out$n_records <- length(lv$nodes)
     out$in_schema <- out$field %in% schema_fields
     out$field[!out$in_schema] <- safe_field_names(out$field[!out$in_schema])
     out
@@ -393,8 +424,12 @@ describe_biotic_file <- function(file) {
     catchsample = c("lengthmeasurement", "catchproducttype", "sampleproducttype")
   )
   per_level <- lapply(names(code_fields), function(level) {
-    nodes <- xml2::xml_find_all(doc, paste0("//", level))
-    vals <- lapply(code_fields[[level]], function(f) safe_codes(code_text(nodes, f)))
+    lv <- parsed$levels[[level]]
+    vals <- lapply(code_fields[[level]], function(f) {
+      x <- trimws(level_values(lv, f, "element"))
+      x[!is.na(x) & !nzchar(x)] <- NA_character_
+      safe_codes(x)
+    })
     names(vals) <- code_fields[[level]]
     tibble::as_tibble(vals)
   })
@@ -409,18 +444,43 @@ describe_biotic_file <- function(file) {
   station_codes <- per_level$fishstation |>
     dplyr::count(.data$stationtype, .data$samplequality, .data$gearcondition, .data$haulvalidity)
   structure(
-    list(namespace = namespace, elements = elements, fields = fields, codes = codes,
+    list(namespace = parsed$namespace, elements = elements, fields = fields, codes = codes,
          station_codes = station_codes),
     class = "nb_description"
   )
 }
 
-# Trimmed text of one child element per node; NA where it is absent or empty.
-code_text <- function(nodes, field) {
-  child <- xml2::xml_find_first(nodes, field)
-  out <- trimws(xml2::xml_text(child))
-  out[is.na(child) | !nzchar(out)] <- NA_character_
-  out
+#' Describe and validate a survey file in one pass
+#'
+#' Combines [describe_biotic()] and [validate_survey()] for one file of the data
+#' zone, parsing it only once, which roughly halves the time needed to check
+#' many files. Errors are handled as in [read_survey()]: details go to the local
+#' log and only a sanitised code is shown.
+#'
+#' @inheritParams read_survey
+#' @return A list with `description` (an `nb_description`) and `validation` (an
+#'   `nb_validation`). Neither contains values.
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(root)
+#' write_biotic(synth_survey(seed = 1), file.path(root, "synthetic.xml"))
+#' res <- check_biotic("synthetic.xml", root = root)
+#' res$validation
+check_biotic <- function(path, root = data_root()) {
+  file <- resolve_data_path(path, root)
+  with_sanitised_errors(
+    {
+      parsed <- parse_biotic(file)
+      read <- survey_from_parsed(parsed)
+      survey <- new_survey(read$tables, coercion_failures = read$failures,
+                           namespace = read$namespace)
+      list(description = describe_parsed(parsed), validation = validate_survey(survey))
+    },
+    log_dir = file.path(root, "logs"),
+    code = "IO-READ-01",
+    message = "The biotic file could not be read as NMDBiotic XML."
+  )
 }
 
 #' @export
