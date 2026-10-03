@@ -22,9 +22,18 @@ sampling units (knowledge/sampling-units.md). The report contains check
 identifiers, field names and counts only, never values.
 }
 \details{
-Status is \code{fail} for a structural or impossible value, and \code{warn} for a
-value or pattern that needs a person's judgement (for example a catch split
-into several parts, which may or may not be additive).
+Status is \code{fail} for a structural problem or an impossible value, and \code{warn}
+for a value or pattern that needs a person's judgement (for example a catch
+split into several parts, which may or may not be additive).
+
+Two kinds of check can fail. \strong{Structural} checks test whether the survey
+structure is complete and consistent: \verb{IO-STR-*}, \verb{IO-TYP-*}, \code{IO-CMP-02},
+\code{IO-KEY-01} to \code{IO-KEY-03} and \verb{IO-REF-*}. \strong{Value} checks (\verb{IO-VAL-*}) test
+the recorded values; on real data their failures describe the source data,
+which the package never alters, and the estimation pipelines handle them
+through their inclusion rules. Repeated specimen numbers (\code{IO-KEY-04}) are a
+warning, since some real files number specimens this way and each record is
+kept as a separate fish.
 }
 \examples{
 validate_survey(synth_survey(seed = 1)$survey)

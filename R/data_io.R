@@ -547,9 +547,18 @@ n_outside <- function(x, ok) sum(!is.na(x) & !ok, na.rm = TRUE)
 #' sampling units (knowledge/sampling-units.md). The report contains check
 #' identifiers, field names and counts only, never values.
 #'
-#' Status is `fail` for a structural or impossible value, and `warn` for a
-#' value or pattern that needs a person's judgement (for example a catch split
-#' into several parts, which may or may not be additive).
+#' Status is `fail` for a structural problem or an impossible value, and `warn`
+#' for a value or pattern that needs a person's judgement (for example a catch
+#' split into several parts, which may or may not be additive).
+#'
+#' Two kinds of check can fail. **Structural** checks test whether the survey
+#' structure is complete and consistent: `IO-STR-*`, `IO-TYP-*`, `IO-CMP-02`,
+#' `IO-KEY-01` to `IO-KEY-03` and `IO-REF-*`. **Value** checks (`IO-VAL-*`) test
+#' the recorded values; on real data their failures describe the source data,
+#' which the package never alters, and the estimation pipelines handle them
+#' through their inclusion rules. Repeated specimen numbers (`IO-KEY-04`) are a
+#' warning, since some real files number specimens this way and each record is
+#' kept as a separate fish.
 #'
 #' @param x An `nb_survey` object.
 #' @return An `nb_validation` tibble with the columns `check_id`, `table`,
@@ -607,8 +616,18 @@ validate_survey <- function(x) {
     n_missing <- if (length(keys)) sum(!stats::complete.cases(df[keys])) else 0L
     add("IO-CMP-02", tbl, paste(keys, collapse = ", "), "fail", nrow(df), n_missing,
         "Key fields not missing")
-    add(sprintf("IO-KEY-%02d", match(tbl, survey_tables)), tbl, paste(keys, collapse = ", "),
-        "fail", nrow(df), n_duplicated(df, keys), "Key unique within table")
+    # Specimen numbers repeat within a catch sample in some real files (a numbering
+    # practice in the source data, confirmed against the XML on 3 October 2026).
+    # Each record is kept as a separate fish, and version 1 never joins on the
+    # specimen number, so this is a warning rather than a structural failure.
+    if (tbl == "individual") {
+      add("IO-KEY-04", tbl, paste(keys, collapse = ", "), "warn", nrow(df),
+          n_duplicated(df, keys),
+          "Specimen numbers repeat within a catch sample; each record is kept as a separate fish")
+    } else {
+      add(sprintf("IO-KEY-%02d", match(tbl, survey_tables)), tbl, paste(keys, collapse = ", "),
+          "fail", nrow(df), n_duplicated(df, keys), "Key unique within table")
+    }
   }
 
   # Links between tables
@@ -677,9 +696,11 @@ validate_survey <- function(x) {
   measurement <- rep(NA_character_, nrow(ind))
   if (all(c(table_keys("catch"), "lengthmeasurement") %in% names(ca)) &&
       all(table_keys("catch") %in% names(ind)) && nrow(ind) > 0L) {
-    lm <- dplyr::left_join(ind[table_keys("catch")],
-                           ca[c(table_keys("catch"), "lengthmeasurement")],
-                           by = table_keys("catch"))
+    # One row per catch-sample key, so that duplicated keys (IO-KEY-03) cannot
+    # multiply the individuals in the join.
+    ca_lm <- ca[c(table_keys("catch"), "lengthmeasurement")]
+    ca_lm <- ca_lm[!duplicated(ca_lm[table_keys("catch")]), ]
+    lm <- dplyr::left_join(ind[table_keys("catch")], ca_lm, by = table_keys("catch"))
     measurement <- safe_codes(lm$lengthmeasurement)
   }
   finite <- is.finite(k)

@@ -85,6 +85,18 @@ test_that("corrupted surveys fail the expected checks", {
   v <- validate_survey(corrupt("station", function(d) dplyr::bind_rows(d, d[1, ])))
   expect_equal(status_of(v, "IO-KEY-02"), "fail")
 
+  v <- validate_survey(corrupt("catch", function(d) dplyr::bind_rows(d, d[1, ])))
+  expect_equal(status_of(v, "IO-KEY-03"), "fail")
+
+  # Repeated specimen numbers are a source-data practice, reported as a warning
+  v <- validate_survey(corrupt("individual", function(d) {
+    d$specimenid[2] <- d$specimenid[1]
+    d
+  }))
+  row <- v[v$check_id == "IO-KEY-04", ]
+  expect_equal(row$status, "warn")
+  expect_equal(row$n_failed, 1L)
+
   v <- validate_survey(corrupt("catch", function(d) {
     d$serialnumber[1] <- 1L
     d
