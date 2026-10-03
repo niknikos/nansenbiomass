@@ -56,7 +56,7 @@ Design points a reviewer should know:
 | Item | Value |
 | --- | --- |
 | Date | 29 September 2026; rerun 3 October 2026 after each change |
-| Code | branch `claude/elegant-pascal-52da5l`, last code commit `3f07e23` |
+| Code | branch `claude/elegant-pascal-52da5l`, last code commit `4358fe4` |
 | Cloud environment | `nansenbiomass-m0`; setup logs newer than the session, so the current `cloud/setup.sh` ran |
 | R and packages | R 4.6.1; the versions recorded in the M0 record and pinned in `renv.lock` |
 | New dependencies | None outside `renv.lock`: dplyr, rlang, sf, tibble, withr and xml2 moved to Imports |
@@ -64,7 +64,7 @@ Design points a reviewer should know:
 `R CMD build` and `R CMD check --no-manual` ran in the session's scratchpad, not in the
 working tree. Session charset UTF-8; **`Status: OK`**, no NOTE, WARNING or ERROR; examples
 ran; tests `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 165 ]` on 29 September and, after the
-changes of 3 October, `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 188 ]`. The first commit, checked on
+changes of 3 October, `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 194 ]`. The first commit, checked on
 its own, also passed its tests, with one NOTE: `utils` is declared before the airlock, which
 uses it, arrives in the second.
 
@@ -218,6 +218,13 @@ assigned differently, and the same 1,363 repeated keys. The repetition is theref
 source files: in most affected surveys, distinct fish share a specimen number within a
 catch sample, a numbering practice that also explains why few rows are fully identical.
 Each record is kept as a separate fish; `IO-KEY-04` is now a warning.
+
+**Duplicated catch samples.** If two catch samples ever share a key (an `IO-KEY-03`
+failure, which did not occur in the archive), the condition-factor check does not choose
+between them: fish whose duplicated catch samples disagree on the length-measurement code
+are reported as `lengthmeasurement = ambiguous`. Choosing between duplicated records is a
+question about the data; from M2, the estimation pipeline should refuse such a survey
+rather than keep one of the rows.
 
 **Outcome.** Under the revised criterion (step 4), acceptance check 1 is met: the same checks
 run on real and synthetic data, all 416 files are read without error, and every structural
