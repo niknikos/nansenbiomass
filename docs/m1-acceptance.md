@@ -250,8 +250,8 @@ Both surveys passed the same checks as the synthetic surveys, with no failure an
 change to the reader.
 
 **Tests on the laptop.** `testthat::test_local()` at commit `03988a1` (Windows, lockfile
-library): `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 181 ]`. Later commits were tested in the cloud;
-a final laptop run before merging is advisable.
+library): `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 181 ]`. At the branch head `e77d949`, the
+project lead reported on 3 October 2026 that all tests pass on the laptop.
 
 **Adaptations made after these runs (3 October 2026).** No check failed, so nothing had to
 be fixed. The warnings and the list of fields outside the schema led to these additions:
