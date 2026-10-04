@@ -28,6 +28,13 @@ here it never touches real data at all (docs/spec.md, Section 3.5).
 | C2 Aggregated | Estimates by survey, stratum and species; CVs, intervals, summary diagnostics | Only once a person has released it into `outbox/` |
 | C3 Structural | Code, configuration, schemas (field names and types), synthetic data | Yes |
 
+**Official StoX projects and stratum files (project lead's decision, 4 October 2026).** Official
+StoX project files (`project.json`, `project.xml`) and stratum files are class C3 and may be shared
+with you, for example as attachments. They may contain a station exclusion list and file paths
+(which can carry a cruise number or vessel name); that is accepted. No survey data (biotic files,
+catches, lengths, weights) and no outputs with station-level values are shared. Rules 1 to 3
+below apply to everything else.
+
 ### Rules
 
 1. **Never open, list, search or request anything in the data zone.** Real data and full

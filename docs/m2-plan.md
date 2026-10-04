@@ -384,6 +384,11 @@ whether it does. Tests: 467 before WP3; the totals are given at the end of Phase
   (attribute `stratum`) for `data.strata`; `data.stratum_names` is now optional and is read from the
   polygons when absent.
 
+**Classification of official projects and strata (4 October 2026, project lead).** Official StoX project
+files and stratum files are class C3 and may be shared with the AI (recorded in `CLAUDE.md`, spec
+Section 3.1 and D-02). They are read directly when attached, which replaces the review rounds on
+`describe_stox_project()` output for those files. Survey data and station-level outputs remain excluded.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

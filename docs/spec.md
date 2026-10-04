@@ -49,7 +49,7 @@ Raw survey data never enter the AI's context, because anything Claude Code reads
 | C2 Aggregated | Estimates by survey, stratum and species; CVs and intervals; summary diagnostics (convergence flags, test statistics, AIC) | Yes, after the disclosure check |
 | C3 Structural | Code, configuration files, data schemas (field names and types), synthetic data | Yes |
 
-sdmTMB model objects embed the fitted data, so they are C1. Station positions are C1 even inside aggregated plots, in line with partner-country preferences on coordinate visibility. Edge cases such as stratum polygons are open \[D-02\].
+sdmTMB model objects embed the fitted data, so they are C1. Station positions are C1 even inside aggregated plots, in line with partner-country preferences on coordinate visibility. Edge cases such as stratum polygons are settled in D-02. Official StoX project files (`project.json`, `project.xml`) and stratum files are C3 (decision of 4 October 2026): they hold settings, strata and possibly a station exclusion list and file paths, and may be shared with the AI; survey data and station-level outputs remain excluded.
 
 ### 3.2 Zones
 
@@ -341,7 +341,7 @@ All seventeen decisions are settled.
 | ID | Decision | Agreed direction | Status |
 | --- | --- | --- | --- |
 | D-01 | Alignment with BAIT (IMR Biotic AI Toolkit) | Adopt BAIT's provider-side and instruction-level safeguards on top of technical enforcement; keep real-data execution outside the AI's reach (Section 3.5) | Decided |
-| D-02 | Classification of edge cases: stratum polygons, species lists, station counts per stratum | Polygons C3 where published in survey reports; station counts C2 only above the minimum set in D-03 | Decided |
+| D-02 | Classification of edge cases: stratum polygons, species lists, station counts per stratum | Polygons C3 where published in survey reports; station counts C2 only above the minimum set in D-03. Extended 4 October 2026: stratum files and official StoX project files (settings, strata, any station exclusion list, file paths) are C3 and may be shared with the AI; biotic data and station-level outputs stay excluded | Decided |
 | D-03 | Disclosure rules: field whitelist and minimum aggregation | Whitelist limited to the Section 9 fields. No released cell based on fewer than 5 stations, or on fewer than 3 stations with a positive catch of the species unless none is positive (the cell then reveals no catch); configurations may raise either minimum, never lower it. Station counts are those inside each stratum, the same for both frameworks. Interpretation adopted 29 September 2026: no release may let a withheld stratum be recovered by subtracting the released strata from the total. The rules restrict what is released, not the stations used in estimation | Decided |
 | D-04 | Execution environment for Claude Code | Cloud sessions from Claude Desktop; WSL2 not used. Claude runs only on a cloud machine holding the repository, real data stay on the laptop, local sessions cannot run commands, and released C2 outputs are stored in the private repository | Proposed |
 | D-05 | Time-series scope and treatment of catchability across vessels and gear | Defer to M5; decide after M3 results | Decided |
