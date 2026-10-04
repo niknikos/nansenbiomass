@@ -15,7 +15,7 @@
 expression_fields <- function(x) {
   x <- gsub("'[^']*'|\"[^\"]*\"", " ", x)
   tokens <- regmatches(x, gregexpr("[A-Za-z_][A-Za-z0-9_.]*", x))[[1]]
-  noise <- c("in", "not", "and", "or", "TRUE", "FALSE", "true", "false", "NA", "NULL",
+  noise <- c("in", "not", "notin", "and", "or", "TRUE", "FALSE", "true", "false", "NA", "NULL",
              "null", "c", "is.na", "nchar", "as.numeric", "as.character", "as.integer")
   tokens <- setdiff(unique(tokens), noise)
   tokens <- safe_field_names(tokens)
@@ -372,6 +372,9 @@ print.nb_stox_description <- function(x, ...) {
 
 # ---- The settings that decide a reproduction ------------------------------------
 
+# Parameters that every process has and that are not settings of the estimate.
+stox_bookkeeping <- c("enabled", "showInMap", "fileOutput")
+
 stox_settings_rules <- list(
   "sweep width and density" = list(fun = "SweptArea|Sweep|Compensation", par = "sweep|width|spread"),
   "filters (fields only)" = list(fun = "Filter", par = NULL),
@@ -380,6 +383,9 @@ stox_settings_rules <- list(
     fun = "(^|::)(LengthDistribution|SpeciesCategoryCatch)$|LengthDist", par = "raising|priority"
   ),
   "PSUs, strata, survey and layers" = list(fun = "PSU|Stratum|Survey|Layer", par = NULL),
+  "length groups, quantities and individuals (biomass route)" = list(
+    fun = "Regroup|AddToStoxBiotic|MeanDensity|(^|::)Quantity$|Individuals", par = NULL
+  ),
   "translations" = list(fun = "Translate", par = NULL)
 )
 
@@ -453,8 +459,8 @@ print.nb_stox_settings <- function(x, ...) {
   print(x$chain, n = Inf, width = Inf)
   for (item in setdiff(names(stox_settings_rules), x$not_found)) {
     cat("\n== ", item, "\n", sep = "")
-    print(x$settings[x$settings$item == item, setdiff(names(x$settings), "item")],
-          n = Inf, width = Inf)
+    rows <- x$settings[x$settings$item == item & !x$settings$parameter %in% stox_bookkeeping, ]
+    print(rows[setdiff(names(rows), "item")], n = Inf, width = Inf)
   }
   if (length(x$not_found)) {
     cat("\nNot found in this project:", paste(x$not_found, collapse = "; "), "\n")

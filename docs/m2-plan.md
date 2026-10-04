@@ -256,6 +256,35 @@ plain comparison is withheld whole. Quoted values are never split, so a connecto
 literal cannot let a fragment through. Paths, free text and the process-data section remain
 withheld. Tests plant identifiers, quoted connectors and long lists to show that none comes back.
 
+**First official project described ("real survey A", 4 October 2026).** From the project lead's
+reviewed `stox_key_settings()` output (structure only; no paths or identifiers were in it):
+
+- *Version.* The project was made with StoX 3.4 (RstoxFramework 3.4.0, RstoxBase 1.8.0,
+  RstoxData 1.6.0), not 4.2. The version gap of D-11 is therefore real for this survey.
+- *Abundance.* `SweptAreaDensity` with `LengthDistributed`, `Constant` width 18.5 m and
+  `AreaNumberDensity`: this is our abundance branch. `LengthDistribution` is `Normalized` with
+  `RaisingFactorPriority = Weight`, followed by `RegroupLengthDistribution` (interval 2). PSUs are
+  one per station (`StationToPSU` as a function parameter, no separate PSU process, no PSU entries
+  in the process data); layers are the water column; the survey is all strata.
+- *Biomass is not taken from catch weights.* The chain continues with `Quantity` (abundance),
+  `Individuals`, `SuperIndividuals` and `ImputeSuperIndividuals`, and the biomass report reads
+  `ImputeSuperIndividuals`. Our template 1.0.0 computes biomass from catch weights, so it would not
+  reproduce this project's biomass. The branch structure was made changeable for this reason: a
+  template 2.0.0 with a super-individual biomass route, chosen by configuration, is needed.
+- *Bootstrap.* 1000 replicates, seed 1; only the mean length distribution is resampled
+  (`ResampleMeanLengthDistributionData`, seed 1); a separate seed table gives the imputation seed
+  (5); 6 cores. Reports are `ReportBootstrap` with `summaryStox`: abundance by species category and
+  length, by stratum and length, by stratum and in total, and total biomass (no biomass by stratum).
+- *Filters.* A haul filter on `Gear`, `gearcondition` and `samplequality`; a station filter with
+  `%notin%`, that is, an exclusion list of stations by their StoX station key; a second filter on
+  `SpeciesCategory`. The exclusion list is station-level (class C1) and must not enter the
+  repository. The package has no way yet to apply it: a configuration field pointing to a file in
+  the data zone is needed.
+- *Strata.* Two entries in the stratum process data; the polygon file is a resource file.
+- *Not found.* No translation process.
+- The output was produced by a build before the filter change of the same day, so the filter
+  clauses were still withheld.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

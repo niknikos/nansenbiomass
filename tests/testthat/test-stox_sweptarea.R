@@ -496,6 +496,10 @@ key_project <- function(sentinel) {
              data = list(BioticPSU = list(list(Stratum = "S1", PSU = "P1", Haul = sentinel)))),
         proc("LengthDistribution", "RstoxBase::LengthDistribution",
              list(LengthDistributionType = "Normalized", RaisingFactorPriority = "Weight")),
+        proc("Regroup", "RstoxBase::RegroupLengthDistribution", list(LengthInterval = 2)),
+        proc("SuperIndividuals", "RstoxBase::SuperIndividuals", list(DistributionMethod = "Equal")),
+        proc("ImputeSuperIndividuals", "RstoxBase::ImputeSuperIndividuals",
+             list(ImputationMethod = "RandomLengthConditional", Seed = 1)),
         proc("AbundanceDensity", "RstoxBase::SweptAreaDensity",
              list(SweptAreaDensityMethod = "LengthDistributed", SweepWidthMethod = "Constant",
                   SweepWidth = 18.5, DensityType = "AreaNumberDensity"))
@@ -527,7 +531,13 @@ test_that("stox_key_settings() picks out the settings and withholds the rest", {
   expect_true(any(s$item == "filters (fields only)" & grepl("samplequality", s$fields)))
   expect_true(any(s$value == "samplequality == 12 & <withheld clause>"))
   expect_true(any(s$item == "translations"))
+  bi <- s[s$item == "length groups, quantities and individuals (biomass route)", ]
+  expect_equal(bi$value[bi$parameter == "LengthInterval"], "2")
+  expect_equal(bi$value[bi$parameter == "ImputationMethod"], "RandomLengthConditional")
   expect_equal(k$not_found, character(0))
+  # the bookkeeping parameters stay in the data but not in the printed output
+  expect_true("enabled" %in% s$parameter)
+  expect_false(any(grepl("showInMap|fileOutput", utils::capture.output(print(k)))))
   expect_equal(k$chain$process[k$chain$model == "baseline"][1], "TranslateBiotic")
   # nothing withheld by describe_stox_project() comes back
   txt <- paste(c(utils::capture.output(print(k)), unlist(k$settings), unlist(k$process_data)),
@@ -602,4 +612,6 @@ test_that("classify_stox_value() reports shown, partly withheld and withheld exp
   expect_equal(classify_stox_value("FilterExpression", "HaulKey != 'a'")$status, "withheld")
   expect_equal(classify_stox_value("FilterExpression", "HaulKey != 'a'")$value, "<withheld: expression>")
   expect_equal(classify_stox_value("FishStationExpr", "HaulKey != 'a'")$fields, "HaulKey")
+  # the operator word notin is not a field
+  expect_equal(classify_stox_value("FilterExpression", "Station %notin% c('a', 'b')")$fields, "Station")
 })
