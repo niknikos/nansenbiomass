@@ -392,7 +392,7 @@ synth_export <- function(sv, quantity = "biomass") {
       disclosure = NA_character_
     ) |>
     dplyr::select(dplyr::all_of(estimate_schema()$field))
-  stations <- sv$stations
+  stations <- sv$stations[sv$stations$design_station, ]
   catch <- sv$survey$catch
   species <- sv$design$species$species_code
   support <- dplyr::bind_rows(lapply(species, function(sp) {

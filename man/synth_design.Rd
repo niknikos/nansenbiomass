@@ -22,6 +22,7 @@ synth_design(
   distance_nmi = c(1.4, 1.6),
   split_prob = 0.15,
   max_measured = 100L,
+  excluded = c(pelagic = 0L, aborted = 0L, zero_distance = 0L),
   year = 2000L,
   grid_km = 1
 )
@@ -53,6 +54,13 @@ spread (\code{trawldoorspread}, in m), so that the field and the catches agree.}
 disjoint catch parts.}
 
 \item{max_measured}{Maximum number of fish measured for length per catch part.}
+
+\item{excluded}{Numbers of extra stations that a swept-area inclusion rule
+must exclude: \code{pelagic} identification hauls (\code{stationtype} 11,
+\code{samplequality} 14), \code{aborted} tows (\code{samplequality} 5, \code{gearcondition} 9)
+and tows whose distance is recorded as 0 (\code{zero_distance}). They are placed
+inside the strata and catch fish like any other tow, so an estimate that
+keeps them is biased; the true values do not depend on them.}
 
 \item{year}{Survey year.}
 

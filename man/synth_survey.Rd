@@ -15,7 +15,9 @@ synth_survey(design = synth_design(), seed = 1L)
 An \code{nb_synth} list with \code{survey} (an \code{nb_survey}), \code{truth} (true
 biomass in tonnes and abundance in millions, by stratum and in total),
 \code{strata} (an \code{sf} object of stratum polygons in WGS84), \code{stations} (station
-positions in km, with stratum and swept area), \code{crs} (the projection),
+positions in km, with stratum, true distance and swept area, codes, and
+\code{design_station}, which is \code{FALSE} for the excluded stations), \code{crs} (the
+projection),
 \code{fields}, \code{design} and \code{seed}.
 }
 \description{

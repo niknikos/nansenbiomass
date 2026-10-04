@@ -38,6 +38,12 @@ synth_crs <- function(design) {
 #' @param split_prob Probability that a positive catch is recorded as two
 #'   disjoint catch parts.
 #' @param max_measured Maximum number of fish measured for length per catch part.
+#' @param excluded Numbers of extra stations that a swept-area inclusion rule
+#'   must exclude: `pelagic` identification hauls (`stationtype` 11,
+#'   `samplequality` 14), `aborted` tows (`samplequality` 5, `gearcondition` 9)
+#'   and tows whose distance is recorded as 0 (`zero_distance`). They are placed
+#'   inside the strata and catch fish like any other tow, so an estimate that
+#'   keeps them is biased; the true values do not depend on them.
 #' @param year Survey year.
 #' @param grid_km Resolution of the integration grid for the true values, in km.
 #' @return An `nb_synth_design` list.
@@ -76,9 +82,18 @@ synth_design <- function(
     distance_nmi = c(1.4, 1.6),
     split_prob = 0.15,
     max_measured = 100L,
+    excluded = c(pelagic = 0L, aborted = 0L, zero_distance = 0L),
     year = 2000L,
     grid_km = 1) {
   family <- match.arg(family)
+  kinds <- c("pelagic", "aborted", "zero_distance")
+  if (!is.numeric(excluded) || is.null(names(excluded)) || !all(names(excluded) %in% kinds) ||
+      any(is.na(excluded) | excluded < 0)) {
+    nb_abort("SY-ARG-04", "`excluded` must be named counts of pelagic, aborted and zero_distance.")
+  }
+  excluded <- vapply(kinds, function(k) {
+    if (k %in% names(excluded)) as.integer(excluded[[k]]) else 0L
+  }, integer(1))
   structure(
     list(
       centre = c(lat = -30, lon = -120),
@@ -95,6 +110,7 @@ synth_design <- function(
       distance_nmi = distance_nmi,
       split_prob = split_prob,
       max_measured = as.integer(max_measured),
+      excluded = excluded,
       year = as.integer(year),
       grid_km = grid_km,
       mission = list(
@@ -234,6 +250,41 @@ make_stations <- function(design) {
   )
 }
 
+# Extra stations that the inclusion rules must exclude, placed uniformly in
+# randomly chosen strata. Their catches use the true tow distance; zero-distance
+# tows only record a distance of 0.
+make_excluded_stations <- function(design) {
+  kinds <- rep(names(design$excluded), design$excluded)
+  n <- length(kinds)
+  st <- design$strata
+  idx <- sample(seq_len(nrow(st)), n, replace = TRUE)
+  x <- stats::runif(n, st$xmin[idx], st$xmax[idx])
+  y <- stats::runif(n, st$ymin[idx], st$ymax[idx])
+  distance <- round(stats::runif(n, design$distance_nmi[1], design$distance_nmi[2]), 2)
+  heading <- stats::runif(n, 0, 2 * pi)
+  dist_km <- distance * 1.852
+  door_m <- round(design$swept_width_km * 1000 * stats::runif(n, 0.9, 1.1), 1)
+  codes <- list(
+    pelagic = c(stationtype = "11", samplequality = "14", gearcondition = "1"),
+    aborted = c(stationtype = "12", samplequality = "5", gearcondition = "9"),
+    zero_distance = c(stationtype = "12", samplequality = "12", gearcondition = "1")
+  )
+  tibble::tibble(
+    stratum = st$stratum[idx],
+    x = x, y = y,
+    x_end = x + dist_km * sin(heading),
+    y_end = y + dist_km * cos(heading),
+    distance = distance,
+    trawldoorspread = door_m,
+    swept_area_km2 = dist_km * door_m / 1000,
+    stationtype = vapply(codes[kinds], `[[`, character(1), "stationtype"),
+    samplequality = vapply(codes[kinds], `[[`, character(1), "samplequality"),
+    gearcondition = vapply(codes[kinds], `[[`, character(1), "gearcondition"),
+    design_station = FALSE,
+    distance_recorded = ifelse(kinds == "zero_distance", 0, distance)
+  )
+}
+
 to_lonlat <- function(x, y, crs) {
   pts <- sf::st_as_sf(data.frame(x = x, y = y), coords = c("x", "y"), crs = crs)
   xy <- sf::st_coordinates(sf::st_transform(pts, 4326))
@@ -316,7 +367,9 @@ make_individuals <- function(sp, n) {
 #' @return An `nb_synth` list with `survey` (an `nb_survey`), `truth` (true
 #'   biomass in tonnes and abundance in millions, by stratum and in total),
 #'   `strata` (an `sf` object of stratum polygons in WGS84), `stations` (station
-#'   positions in km, with stratum and swept area), `crs` (the projection),
+#'   positions in km, with stratum, true distance and swept area, codes, and
+#'   `design_station`, which is `FALSE` for the excluded stations), `crs` (the
+#'   projection),
 #'   `fields`, `design` and `seed`.
 #' @export
 #' @examples
@@ -338,6 +391,14 @@ synth_survey_impl <- function(design, seed) {
     make_field(design$species[i, ], design, grid)
   })
   stations <- make_stations(design)
+  stations$stationtype <- design$station_codes$stationtype
+  stations$samplequality <- design$station_codes$samplequality
+  stations$gearcondition <- design$station_codes$gearcondition
+  stations$design_station <- TRUE
+  stations$distance_recorded <- stations$distance
+  if (sum(design$excluded) > 0L) {
+    stations <- dplyr::bind_rows(stations, make_excluded_stations(design))
+  }
   n_st <- nrow(stations)
   start <- to_lonlat(stations$x, stations$y, crs)
   end <- to_lonlat(stations$x_end, stations$y_end, crs)
@@ -347,7 +408,7 @@ synth_survey_impl <- function(design, seed) {
   times <- sprintf("%02d:15:00.000Z", hours)
   stop_times <- sprintf("%02d:45:00.000Z", hours)
   # Tows last 30 minutes; the log runs on from an arbitrary 1000 nmi.
-  log_start <- round(1000 + cumsum(c(0, stations$distance[-n_st] + 20)), 2)
+  log_start <- round(1000 + cumsum(c(0, stations$distance_recorded[-n_st] + 20)), 2)
   mission_keys <- tibble::tibble(missiontype = m$missiontype, startyear = design$year,
                                  platform = m$platform, missionnumber = m$missionnumber)
   station <- tibble::tibble(
@@ -356,22 +417,22 @@ synth_survey_impl <- function(design, seed) {
     station = seq_len(n_st),
     stationstartdate = dates,
     stationstarttime = times,
-    stationtype = design$station_codes$stationtype,
+    stationtype = stations$stationtype,
     latitudestart = start$lat, longitudestart = start$lon,
     latitudeend = end$lat, longitudeend = end$lon,
     bottomdepthstart = round(synth_depth(stations$x, stations$y), 1),
     bottomdepthstop = round(synth_depth(stations$x_end, stations$y_end), 1),
     fishingdepthmin = NA_real_,
     gear = design$station_codes$gear,
-    gearcondition = design$station_codes$gearcondition,
-    samplequality = design$station_codes$samplequality,
-    distance = stations$distance,
+    gearcondition = stations$gearcondition,
+    samplequality = stations$samplequality,
+    distance = stations$distance_recorded,
     stationstopdate = dates,
     stationstoptime = stop_times,
     fishingdepthmax = NA_real_,
-    vesselspeed = round(stations$distance / 0.5, 1),
+    vesselspeed = round(stations$distance_recorded / 0.5, 1),
     logstart = log_start,
-    logstop = log_start + stations$distance,
+    logstop = log_start + stations$distance_recorded,
     verticaltrawlopening = round(stats::runif(n_st, 4.5, 5.5), 1),
     trawldoorspread = stations$trawldoorspread,
     haulvalidity = NA_character_,
@@ -469,7 +530,8 @@ synth_survey_impl <- function(design, seed) {
   sv$truth <- true_values(sv, grid)
   sv$strata <- strata_polygons(design, crs)
   sv$stations <- stations[c("serialnumber", "stratum", "x", "y", "distance", "trawldoorspread",
-                            "swept_area_km2")]
+                            "swept_area_km2", "stationtype", "samplequality", "gearcondition",
+                            "design_station")]
   structure(
     sv[c("survey", "truth", "strata", "stations", "crs", "fields", "design", "seed")],
     class = "nb_synth"

@@ -10,7 +10,7 @@ this file, then continue from **Next step** below.
 | --- | --- |
 | Phase 0. Environment and dependencies | In progress: `cloud/setup.sh` installs StoX 4.2 (RstoxData 2.2.1, RstoxBase 2.2.1, RstoxFramework 4.2.1); to be verified in a fresh `nansenbiomass-m1` session |
 | Phase 1. Official setup (structure script) | `describe_stox_project()` ready (StoX 2.7 `project.xml` and StoX 3+ `project.json`); waiting for the laptop run on the official projects |
-| Phase 2. Configuration and entry point | Not started |
+| Phase 2. Configuration and entry point | Done except `run_estimate()`, moved to Phase 3 where it can run StoX: `read_config()`, `validate_config()`, `config_hash()`, `inclusion_summary()`; synthetic excluded stations (brought forward from Phase 5); example in `inst/configs/synthetic-example.yml` |
 | Phase 3. StoX template and runner | Not started |
 | Phase 4. Outputs and the airlock | Not started |
 | Phase 5. Synthetic tests | Not started |
@@ -61,7 +61,15 @@ re-exported or corrected file would explain differences on its own.
 **Next step.** Paste `cloud/setup.sh` into the `nansenbiomass-m1` environment's settings and
 verify it in a fresh session (setup logs newer than the session, StoX packages loading,
 tests passing). The project lead runs `describe_stox_project()` on the official projects
-and shares the reviewed output. Meanwhile, Phase 2 proceeds.
+and shares the reviewed output. Then Phase 3: the StoX template, the runner and
+`run_estimate()`, built against the installed RstoxFramework 4.2.1.
+
+**Notes on Phase 2 (4 October 2026).** `yaml` moved from Suggests to Imports (already in
+`renv.lock`). The synthetic example configuration ships with the package in `inst/configs/`,
+so that examples and tests can use it; the repository's `configs/` holds real survey
+configurations. Stratum polygons are read with sf (GeoJSON and other formats it reads);
+polygons inside a StoX 2.7 `project.xml` are not read by `inclusion_summary()`, and the
+Phase 3 helper that extracts them to a polygon file covers that case.
 
 ## Context
 
@@ -247,10 +255,10 @@ and the bootstrap settings (D-10).
 | --- | --- |
 | `R/stox_sweptarea.R` | `describe_stox_project()`, template filling, runner, report conversion |
 | `R/config.R` (new) | `read_config()`, `validate_config()`, `config_hash()` |
-| `R/run_estimate.R` (new) | `run_estimate()`, `inclusion_summary()` |
+| `R/stox_sweptarea.R` | `run_estimate()` (Phase 3), `inclusion_summary()` |
 | `R/synth.R` | Stratum polygon export; excluded-station option |
 | `inst/stox/sweptarea/` | StoX 4.x project template |
-| `configs/synthetic-example.yml` | Synthetic configuration |
+| `inst/configs/synthetic-example.yml` | Synthetic configuration |
 | `tests/testthat/test-stox_sweptarea.R`, `test-config.R` | New tests |
 | `cloud/setup.sh`, `DESCRIPTION` | StoX installation; Suggests |
 | `docs/m2-acceptance.md` | Acceptance record and laptop procedure |

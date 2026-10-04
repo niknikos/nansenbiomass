@@ -288,3 +288,123 @@ print.nb_stox_description <- function(x, ...) {
   print(x$process_data, n = Inf)
   invisible(x)
 }
+
+# ---- Pinned StoX release ------------------------------------------------------
+
+# The RstoxFramework version the pipeline is built and tested against (StoX 4.2;
+# with RstoxBase and RstoxData 2.2.1). Change together with cloud/setup.sh,
+# DESCRIPTION and docs/m2-plan.md.
+stox_pinned_version <- "4.2.1"
+
+# ---- Inclusion rules ----------------------------------------------------------
+
+# Stratum of each station from its start position; NA outside every polygon.
+station_strata <- function(station, polygons, label) {
+  if (!label %in% names(polygons)) {
+    nb_abort("SX-STRATA-02", "The stratum polygons have no attribute named by data.stratum_label.")
+  }
+  ok <- !is.na(station$longitudestart) & !is.na(station$latitudestart)
+  out <- rep(NA_character_, nrow(station))
+  if (any(ok)) {
+    pts <- sf::st_as_sf(data.frame(lon = station$longitudestart[ok],
+                                   lat = station$latitudestart[ok]),
+                        coords = c("lon", "lat"), crs = 4326)
+    polygons <- sf::st_transform(polygons, 4326)
+    hit <- sf::st_intersects(pts, polygons)
+    first <- vapply(hit, function(h) if (length(h)) h[[1]] else NA_integer_, integer(1))
+    out[ok] <- as.character(polygons[[label]])[first]
+  }
+  out
+}
+
+read_strata_polygons <- function(file) {
+  if (grepl("\\.xml$", file, ignore.case = TRUE)) {
+    nb_abort("SX-STRATA-01",
+             "Stratum polygons inside a StoX 2.7 project.xml are not read here; use a polygon file.")
+  }
+  sf::st_read(file, quiet = TRUE)
+}
+
+#' Station counts kept and excluded by a survey's inclusion rules
+#'
+#' Applies a configuration's inclusion rules (D-09) to its biotic files, in
+#' order: allowed `stationtype`, `samplequality` and `gearcondition` codes, a
+#' positive towed distance, and a start position inside the strata. A station
+#' with a missing code is excluded by a rule that lists allowed codes. The
+#' result holds counts only, to compare with the station numbers in a survey
+#' report before any estimate is made.
+#'
+#' @param config A configuration file path, or an `nb_config` from
+#'   [read_config()].
+#' @inheritParams read_survey
+#' @return An `nb_inclusion` list: `rules` (a tibble of step, rule, stations
+#'   before, excluded and after) and `by_stratum` (stations kept per stratum,
+#'   including strata with none).
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(file.path(root, "surveys"), recursive = TRUE)
+#' dir.create(file.path(root, "strata"))
+#' sv <- synth_survey(synth_design(excluded = c(pelagic = 3, aborted = 2)), seed = 1)
+#' write_biotic(sv, file.path(root, "surveys", "synthetic-seed1.xml"))
+#' strata <- sv$strata
+#' names(strata)[names(strata) == "stratum"] <- "StratumName"
+#' sf::st_write(strata, file.path(root, "strata", "synthetic-strata.geojson"), quiet = TRUE)
+#' inclusion_summary(system.file("configs", "synthetic-example.yml",
+#'                               package = "nansenbiomass"), root = root)
+inclusion_summary <- function(config, root = data_root()) {
+  cfg <- if (inherits(config, "nb_config")) config else read_config(config)
+  files <- vapply(cfg$data$biotic, resolve_data_path, character(1), root = root,
+                  USE.NAMES = FALSE)
+  strata_file <- resolve_data_path(cfg$data$strata, root)
+  with_sanitised_errors(
+    {
+      survey <- read_biotic(files)
+      polygons <- read_strata_polygons(strata_file)
+      inclusion_counts(survey$station, cfg, polygons)
+    },
+    log_dir = file.path(root, "logs"),
+    code = "SX-INC-01",
+    message = "The inclusion rules could not be applied."
+  )
+}
+
+inclusion_counts <- function(st, cfg, polygons) {
+  keep <- rep(TRUE, nrow(st))
+  rows <- list()
+  step <- function(rule, bad) {
+    before <- sum(keep)
+    excluded <- sum(keep & bad)
+    keep <<- keep & !bad
+    rows[[length(rows) + 1L]] <<- tibble::tibble(
+      step = length(rows) + 1L, rule = rule, n_before = before,
+      n_excluded = excluded, n_after = sum(keep)
+    )
+  }
+  for (f in c("stationtype", "samplequality", "gearcondition")) {
+    allowed <- cfg$inclusion[[f]]
+    if (!is.null(allowed)) {
+      step(paste0(f, " in {", paste(allowed, collapse = ", "), "}"), !st[[f]] %in% allowed)
+    }
+  }
+  if (isTRUE(cfg$inclusion$positive_distance)) {
+    step("distance > 0", is.na(st$distance) | st$distance <= 0)
+  }
+  stratum <- station_strata(st, polygons, cfg$data$stratum_label)
+  step("start position inside the strata", is.na(stratum))
+  kept <- table(factor(stratum[keep], levels = cfg$data$stratum_names))
+  structure(
+    list(rules = dplyr::bind_rows(rows),
+         by_stratum = tibble::tibble(stratum = names(kept), n_kept = as.integer(kept))),
+    class = "nb_inclusion"
+  )
+}
+
+#' @export
+print.nb_inclusion <- function(x, ...) {
+  cat("<nb_inclusion> station counts only\n")
+  print(x$rules, n = Inf, width = Inf)
+  cat("\nStations kept by stratum:\n")
+  print(x$by_stratum, n = Inf)
+  invisible(x)
+}

@@ -167,3 +167,67 @@ test_that("settings are classified conservatively", {
   expect_equal(classify_stox_value("FileName", "C:\\data\\x.txt")$value, "<withheld: path>")
   expect_equal(expression_fields("a == 'X123' & b %in% c(1, 2) | is.na(c3)"), c("a", "b", "c3"))
 })
+
+# ---- Inclusion rules ----------------------------------------------------------
+
+example_config <- function() {
+  f <- system.file("configs", "synthetic-example.yml", package = "nansenbiomass")
+  if (!nzchar(f)) f <- test_path("../../inst/configs/synthetic-example.yml")
+  f
+}
+
+synthetic_root <- function(excluded = c(pelagic = 4, aborted = 3, zero_distance = 2),
+                           envir = parent.frame()) {
+  root <- withr::local_tempdir(.local_envir = envir)
+  dir.create(file.path(root, "surveys"))
+  dir.create(file.path(root, "strata"))
+  sv <- synth_survey(synth_design(excluded = excluded), seed = 1)
+  write_biotic(sv, file.path(root, "surveys", "synthetic-seed1.xml"))
+  strata <- sv$strata
+  names(strata)[names(strata) == "stratum"] <- "StratumName"
+  sf::st_write(strata, file.path(root, "strata", "synthetic-strata.geojson"), quiet = TRUE)
+  list(root = root, sv = sv)
+}
+
+test_that("inclusion_summary() excludes exactly the planted stations", {
+  s <- synthetic_root()
+  inc <- inclusion_summary(example_config(), root = s$root)
+  expect_s3_class(inc, "nb_inclusion")
+  r <- inc$rules
+  expect_equal(r$n_before[1], 54L)
+  expect_equal(r$n_excluded[r$rule == "stationtype in {12}"], 4L)
+  expect_equal(r$n_excluded[r$rule == "samplequality in {12}"], 3L)
+  expect_equal(r$n_excluded[r$rule == "gearcondition in {1, 2}"], 0L)
+  expect_equal(r$n_excluded[r$rule == "distance > 0"], 2L)
+  expect_equal(r$n_excluded[r$rule == "start position inside the strata"], 0L)
+  expect_equal(r$n_after[nrow(r)], 45L)
+  design <- s$sv$design$strata
+  expect_equal(inc$by_stratum$n_kept[match(design$stratum, inc$by_stratum$stratum)],
+               design$n_stations)
+})
+
+test_that("rules left out of the configuration exclude nothing", {
+  s <- synthetic_root(excluded = c(pelagic = 2))
+  cfg <- read_config(example_config())
+  cfg$inclusion$stationtype <- NULL
+  cfg$inclusion$samplequality <- NULL
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_false(any(grepl("stationtype|samplequality", inc$rules$rule)))
+  expect_equal(inc$rules$n_after[nrow(inc$rules)], 47L)
+})
+
+test_that("stations outside the strata are counted, and polygons need the label", {
+  s <- synthetic_root(excluded = c(pelagic = 0))
+  cfg <- read_config(example_config())
+  cfg$data$stratum_names <- c("SYN-A", "SYN-B", "SYN-C", "SYN-D")
+  polys <- sf::st_read(file.path(s$root, "strata", "synthetic-strata.geojson"), quiet = TRUE)
+  sf::st_write(polys[polys$StratumName != "SYN-D", ],
+               file.path(s$root, "strata", "three.geojson"), quiet = TRUE)
+  cfg$data$strata <- "strata/three.geojson"
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_equal(inc$rules$n_excluded[inc$rules$rule == "start position inside the strata"], 8L)
+  expect_equal(inc$by_stratum$n_kept[inc$by_stratum$stratum == "SYN-D"], 0L)
+  cfg$data$stratum_label <- "Name"
+  cnd <- expect_error(inclusion_summary(cfg, root = s$root), class = "nansenbiomass_error")
+  expect_equal(cnd$nb_code, "SX-STRATA-02")
+})

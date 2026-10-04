@@ -92,3 +92,20 @@ test_that("write_biotic() refuses anything not flagged synthetic", {
   expect_error(write_biotic(list(), f), class = "nansenbiomass_error")
   expect_match(readLines(f, n = 2)[2], "SYNTHETIC SURVEY")
 })
+
+test_that("excluded stations are added without changing the design or the truth", {
+  plain <- synth_survey(seed = 1)
+  ex <- synth_survey(synth_design(excluded = c(pelagic = 4, aborted = 3, zero_distance = 2)),
+                     seed = 1)
+  expect_identical(ex$truth, plain$truth)
+  st <- ex$stations
+  expect_equal(sum(st$design_station), 45L)
+  expect_equal(sum(!st$design_station), 9L)
+  expect_equal(sum(st$stationtype == "11" & st$samplequality == "14"), 4L)
+  expect_equal(sum(st$samplequality == "5" & st$gearcondition == "9"), 3L)
+  expect_equal(sum(ex$survey$station$distance == 0), 2L)
+  # Synthetic exports count only the design stations
+  sup <- synth_export(ex)$support
+  expect_equal(sum(sup$n_stations[sup$species_code == "SYN001"]), 45L)
+  expect_error(synth_design(excluded = c(pelagic = -1)), class = "nansenbiomass_error")
+})

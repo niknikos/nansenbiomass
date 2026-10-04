@@ -1,0 +1,32 @@
+# Synthetic example configuration (class C3). It matches synth_design() and
+# synth_survey(seed = 1); every identifier and path is artificial. Real survey
+# configurations live in the repository's configs/ folder, one per survey.
+survey:
+  label: SYNTH0001
+  year: 2000
+data:
+  # Relative to NANSEN_DATA_ROOT
+  biotic:
+    - surveys/synthetic-seed1.xml
+  strata: strata/synthetic-strata.geojson
+  stratum_label: StratumName
+  stratum_names: [SYN-A, SYN-B, SYN-C, SYN-D]
+inclusion:
+  # NANSIS swept-area convention (docs/nansis-codes.md)
+  stationtype: ["12"]
+  samplequality: ["12"]
+  gearcondition: ["1", "2"]
+  positive_distance: true
+swept_width:
+  method: trawldoorspread
+  fixed_m: 20
+species: [SYN001, SYN002, SYN003]
+quantities: [biomass, abundance]
+bootstrap:
+  replicates: 100
+  seed: 1
+stox:
+  version: 4.2.1
+disclosure:
+  min_stations: 5
+  min_positive: 3
