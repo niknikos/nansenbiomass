@@ -68,9 +68,40 @@ PASS 321 ]`. This refines the M0 lesson: logs older than the session are expecte
 cache built by the current script is reused; the test of a fresh setup is that the logs
 include the stages the current script writes and the pinned versions are installed.
 
-**Next step.** The project lead runs `describe_stox_project()` on the official projects
-and shares the reviewed output. Then Phase 3: the StoX template, the runner and
-`run_estimate()`, built against the installed RstoxFramework 4.2.1.
+**Brief for Phase 3 (written 4 October 2026, for the session that takes it up).**
+
+- Build against the installed RstoxFramework 4.2.1, RstoxBase 2.2.1 and RstoxData 2.2.1;
+  check function names and arguments in the installed packages, not from memory. StoX 4.2
+  ships only an empty template, so the project is built from code (`createProject()`,
+  `addProcess()`, `modifyProcess()`, as tried in this session) or from a versioned
+  `project.json` template in `inst/stox/sweptarea/` filled from the configuration.
+- `run_estimate(config)` is the single entry point (moved from Phase 2). It reads the
+  configuration (`read_config()`), builds the project under `<root>/stox/<survey>/<run>/`,
+  runs it, converts the bootstrap report to the Section 9 schema, builds the support table
+  (stations and positive stations per stratum and species, from the included stations) and
+  stages with `stage_export()`. Every step inside `with_sanitised_errors()`; logs in
+  `<root>/logs/`.
+- Inclusion rules come from the configuration and must match `inclusion_summary()` exactly
+  (same stations kept). Zero or missing distances recovered from the vessel log
+  (`logstop - logstart`) or from positions, when `inclusion.distance_recovery` asks for it,
+  reach StoX through a translation table in the generated project; biotic files are never
+  altered.
+- Strata come from a polygon file or from a StoX 2.7 `project.xml` (StoX's
+  `DefineStratumPolygon` reads either as a resource file). Respect the 2.7 `includeintotal`
+  flag in totals.
+- Record the StoX package versions in `code_version`.
+- Settings that depend on the official projects (filters, swept width, catch handling,
+  bootstrap) stay configuration values until the project lead's `describe_stox_project()`
+  summaries arrive.
+- Tests on synthetic surveys (`synth_survey()`, with `excluded` stations): the project
+  builds and runs; excluded stations are excluded; the Section 9 output passes the airlock;
+  and the biomass interval for a common species contains the true biomass (Phase 5, but the
+  runner should be shaped for it). Keep bootstrap replicates small so tests stay fast.
+- "Log" in this plan means the vessel's log counter (`logstart`, `logstop`), except where it
+  says setup logs or local logs.
+
+**Next step.** Phase 3, in a new session in `nansenbiomass-m1`. The project lead runs `describe_stox_project()` on the official projects
+and shares the reviewed output.
 
 **Zero distances and strata (4 October 2026, project lead).** Stations with a zero or
 missing towed distance are always flagged by `inclusion_summary()`, with the number whose
