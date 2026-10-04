@@ -222,6 +222,14 @@ WARN 0 | SKIP 0 | PASS 362 ]`; `R CMD check --no-manual` (in the scratchpad): `S
 Running time: about 45 seconds with 10 bootstrap replicates; 100 replicates took about five
 minutes on one core, so real runs with many replicates will take correspondingly longer.
 
+**Verification on the laptop (4 October 2026, project lead).** `testthat::test_local()` on
+Windows with the project library: `[ FAIL 0 | WARN 0 | SKIP 0 | PASS 369 ]`, the same count as
+in the cloud. No test was skipped, so the three StoX packages (RstoxFramework 4.2.1, RstoxBase
+2.2.1, RstoxData 2.2.1) were installed and the StoX tests ran there; the bootstrap and
+`run_estimate()` tests took 419 s of the 484 s in total. The renv notice about renv 1.3.0
+against 1.2.4 in the lockfile is informational, and the lockfile is still to be tidied by the
+project lead.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
