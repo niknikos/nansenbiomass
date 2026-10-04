@@ -65,9 +65,11 @@
 #   whole session, setup, build, check and tests, finished in under two minutes.
 #   Stage timings go to the script's standard output, which the session itself
 #   cannot see; the logs in /tmp/nansenbiomass-setup hold the install output only.
-#   A session that finds those logs older than its own start ran from the cached
-#   environment, not from this script: the cache is rebuilt only when the stored
-#   script or the allowed hosts change. On 28 September 2026, changes saved to an
+#   Logs older than the session are normal when the environment's cached image was
+#   built by this script: the cache is rebuilt only when the stored script or the
+#   allowed hosts change. To tell whether the current script built it, check that
+#   the logs include the stages it writes (r-stox-deps.log and r-stox.log since
+#   M2) and that the pinned versions are installed (docs/m2-plan.md, 4 October 2026). On 28 September 2026, changes saved to an
 #   existing environment did not reach new sessions (runs 4 to 6); a newly created
 #   environment ran the current script on its first session and passed with
 #   Status: OK (docs/m0-acceptance.md).

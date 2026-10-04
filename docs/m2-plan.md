@@ -8,7 +8,7 @@ this file, then continue from **Next step** below.
 
 | Step | State |
 | --- | --- |
-| Phase 0. Environment and dependencies | In progress: `cloud/setup.sh` installs StoX 4.2 (RstoxData 2.2.1, RstoxBase 2.2.1, RstoxFramework 4.2.1); to be verified in a fresh `nansenbiomass-m1` session |
+| Phase 0. Environment and dependencies | Done (4 October 2026): `nansenbiomass-m1` built from the current `cloud/setup.sh`; StoX 4.2 installed as pinned; `R CMD check` Status: OK with 321 tests, in a fresh session there |
 | Phase 1. Official setup (structure script) | `describe_stox_project()` ready (StoX 2.7 `project.xml` and StoX 3+ `project.json`); waiting for the laptop run on the official projects |
 | Phase 2. Configuration and entry point | Done except `run_estimate()`, moved to Phase 3 where it can run StoX: `read_config()`, `validate_config()`, `config_hash()`, `inclusion_summary()`; synthetic excluded stations (brought forward from Phase 5); example in `inst/configs/synthetic-example.yml` |
 | Phase 3. StoX template and runner | Not started |
@@ -58,9 +58,17 @@ Biotic files are read from `surveys/`, never from the official projects. Reprodu
 compares checksums of a project's own input file and the archive file (yes or no), since a
 re-exported or corrected file would explain differences on its own.
 
-**Next step.** Paste `cloud/setup.sh` into the `nansenbiomass-m1` environment's settings and
-verify it in a fresh session (setup logs newer than the session, StoX packages loading,
-tests passing). The project lead runs `describe_stox_project()` on the official projects
+**Verification of `nansenbiomass-m1` (4 October 2026).** A fresh session found the setup
+logs written by the current script, including `r-stox-deps.log` and `r-stox.log` (stages the
+earlier script did not have), dated 04:35 to 04:36, 47 minutes before the session started:
+the script ran when the environment's cached image was built, and the session started from
+that image. RstoxData 2.2.1, RstoxBase 2.2.1 and RstoxFramework 4.2.1 loaded; R 4.6.1,
+`LANG=C.UTF-8`; `R CMD check` at `784f1f5` gave Status: OK, `[ FAIL 0 | WARN 0 | SKIP 0 |
+PASS 321 ]`. This refines the M0 lesson: logs older than the session are expected when a
+cache built by the current script is reused; the test of a fresh setup is that the logs
+include the stages the current script writes and the pinned versions are installed.
+
+**Next step.** The project lead runs `describe_stox_project()` on the official projects
 and shares the reviewed output. Then Phase 3: the StoX template, the runner and
 `run_estimate()`, built against the installed RstoxFramework 4.2.1.
 
