@@ -20,13 +20,16 @@ Reads one survey configuration (\verb{configs/<survey>.yml}) and validates it wi
 \details{
 \itemize{
 \item \code{survey}: \code{label} (text) and \code{year}.
-\item \code{data}: \code{biotic} (one or more biotic files), \code{strata} (the stratum polygon
-file, for example GeoJSON), both relative to \code{NANSEN_DATA_ROOT};
+\item \code{data}: \code{biotic} (one or more biotic files), \code{strata} (a stratum polygon
+file in any format sf reads, or a StoX 2.7 \code{project.xml} holding the
+strata), both relative to \code{NANSEN_DATA_ROOT};
 \code{stratum_label}, the polygon attribute holding stratum names (default
 \code{StratumName}, as in StoX); and \code{stratum_names}.
 \item \code{inclusion}: allowed \code{stationtype}, \code{samplequality} and \code{gearcondition}
-codes (a field left out means no restriction) and \code{positive_distance}
-(default \code{true}). See \code{docs/nansis-codes.md} for the codes (D-09).
+codes (a field left out means no restriction), \code{positive_distance}
+(default \code{true}) and \code{distance_recovery} for zero or missing distances
+(\code{none}, the default, \code{log} or \code{log_or_positions}). See
+\code{docs/nansis-codes.md} for the codes (D-09).
 \item \code{swept_width}: \code{method} (\code{fixed} or \code{trawldoorspread}) and \code{fixed_m} (the
 width in metres, or the fallback where a door spread is missing).
 \item \code{species}: species codes; \code{quantities}: \code{biomass} and/or \code{abundance}.

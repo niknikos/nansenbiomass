@@ -17,6 +17,8 @@ inclusion:
   samplequality: ["12"]
   gearcondition: ["1", "2"]
   positive_distance: true
+  # Zero or missing distances: none (exclude), log, or log_or_positions
+  distance_recovery: none
 swept_width:
   method: trawldoorspread
   fixed_m: 20

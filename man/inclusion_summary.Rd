@@ -14,8 +14,9 @@ inclusion_summary(config, root = data_root())
 }
 \value{
 An \code{nb_inclusion} list: \code{rules} (a tibble of step, rule, stations
-before, excluded and after) and \code{by_stratum} (stations kept per stratum,
-including strata with none).
+before, excluded and after), \code{distance} (counts of zero or missing
+distances, recoverable and recovered) and \code{by_stratum} (stations kept per
+stratum, including strata with none, and \code{include_in_total} where known).
 }
 \description{
 Applies a configuration's inclusion rules (D-09) to its biotic files, in
@@ -24,6 +25,15 @@ positive towed distance, and a start position inside the strata. A station
 with a missing code is excluded by a rule that lists allowed codes. The
 result holds counts only, to compare with the station numbers in a survey
 report before any estimate is made.
+}
+\details{
+Stations with a zero or missing distance are always flagged, with the number
+whose distance could be recovered from the log (stop minus start) or, failing
+that, from the start and end positions. Whether recovered distances are used
+is set by \code{inclusion.distance_recovery} (\code{none}, \code{log} or \code{log_or_positions}).
+Strata can come from a polygon file or from a StoX 2.7 \code{project.xml} (read
+with RstoxBase); for the latter, each stratum's \code{includeintotal} flag is
+reported.
 }
 \examples{
 root <- tempfile("nansen-root-")

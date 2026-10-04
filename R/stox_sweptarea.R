@@ -317,12 +317,40 @@ station_strata <- function(station, polygons, label) {
   out
 }
 
-read_strata_polygons <- function(file) {
+# Stratum polygons from a polygon file (any format sf reads) or from the process
+# data of a StoX 2.7 project.xml (through RstoxBase, as StoX itself does). For a
+# project.xml, each stratum's `includeintotal` flag is kept.
+read_strata_polygons <- function(file, label) {
   if (grepl("\\.xml$", file, ignore.case = TRUE)) {
-    nb_abort("SX-STRATA-01",
-             "Stratum polygons inside a StoX 2.7 project.xml are not read here; use a polygon file.")
+    if (!requireNamespace("RstoxBase", quietly = TRUE)) {
+      nb_abort("SX-STOX-01", "RstoxBase is needed to read strata from a StoX project.xml.")
+    }
+    dt <- RstoxBase::readStratumPolygonFrom2.7(file, remove_includeintotal = FALSE,
+                                               StratumNameLabel = label)
+    df <- as.data.frame(dt)
+    df$includeintotal <- as.logical(df$includeintotal)
+    return(sf::st_as_sf(df, wkt = "geometry", crs = 4326))
   }
   sf::st_read(file, quiet = TRUE)
+}
+
+# Great-circle distance in nautical miles between start and end positions.
+position_distance_nmi <- function(lat1, lon1, lat2, lon2) {
+  rad <- pi / 180
+  a <- sin((lat2 - lat1) * rad / 2)^2 +
+    cos(lat1 * rad) * cos(lat2 * rad) * sin((lon2 - lon1) * rad / 2)^2
+  2 * 3440.065 * asin(pmin(1, sqrt(a)))
+}
+
+# Towed distance that can be recovered where the recorded one is zero or missing:
+# from the log (stop minus start), else from the start and end positions.
+recoverable_distance <- function(st) {
+  from_log <- st$logstop - st$logstart
+  from_log[!is.finite(from_log) | from_log <= 0] <- NA_real_
+  from_pos <- position_distance_nmi(st$latitudestart, st$longitudestart,
+                                    st$latitudeend, st$longitudeend)
+  from_pos[!is.finite(from_pos) | from_pos <= 0] <- NA_real_
+  list(log = from_log, positions = from_pos)
 }
 
 #' Station counts kept and excluded by a survey's inclusion rules
@@ -334,12 +362,21 @@ read_strata_polygons <- function(file) {
 #' result holds counts only, to compare with the station numbers in a survey
 #' report before any estimate is made.
 #'
+#' Stations with a zero or missing distance are always flagged, with the number
+#' whose distance could be recovered from the log (stop minus start) or, failing
+#' that, from the start and end positions. Whether recovered distances are used
+#' is set by `inclusion.distance_recovery` (`none`, `log` or `log_or_positions`).
+#' Strata can come from a polygon file or from a StoX 2.7 `project.xml` (read
+#' with RstoxBase); for the latter, each stratum's `includeintotal` flag is
+#' reported.
+#'
 #' @param config A configuration file path, or an `nb_config` from
 #'   [read_config()].
 #' @inheritParams read_survey
 #' @return An `nb_inclusion` list: `rules` (a tibble of step, rule, stations
-#'   before, excluded and after) and `by_stratum` (stations kept per stratum,
-#'   including strata with none).
+#'   before, excluded and after), `distance` (counts of zero or missing
+#'   distances, recoverable and recovered) and `by_stratum` (stations kept per
+#'   stratum, including strata with none, and `include_in_total` where known).
 #' @export
 #' @examples
 #' root <- tempfile("nansen-root-")
@@ -360,7 +397,7 @@ inclusion_summary <- function(config, root = data_root()) {
   with_sanitised_errors(
     {
       survey <- read_biotic(files)
-      polygons <- read_strata_polygons(strata_file)
+      polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
       inclusion_counts(survey$station, cfg, polygons)
     },
     log_dir = file.path(root, "logs"),
@@ -387,15 +424,37 @@ inclusion_counts <- function(st, cfg, polygons) {
       step(paste0(f, " in {", paste(allowed, collapse = ", "), "}"), !st[[f]] %in% allowed)
     }
   }
+  # Zero or missing distances are always flagged, with what could be recovered;
+  # the configuration decides whether recovered distances are used.
+  no_distance <- is.na(st$distance) | st$distance <= 0
+  rec <- recoverable_distance(st)
+  method <- cfg$inclusion$distance_recovery
+  recovered <- no_distance & (
+    (method %in% c("log", "log_or_positions") & !is.na(rec$log)) |
+      (method == "log_or_positions" & !is.na(rec$positions))
+  )
+  flagged <- keep & no_distance
+  distance <- tibble::tibble(
+    n_zero_or_missing = sum(flagged),
+    n_recoverable_from_log = sum(flagged & !is.na(rec$log)),
+    n_recoverable_from_positions_only = sum(flagged & is.na(rec$log) & !is.na(rec$positions)),
+    recovery = method,
+    n_recovered = sum(flagged & recovered)
+  )
   if (isTRUE(cfg$inclusion$positive_distance)) {
-    step("distance > 0", is.na(st$distance) | st$distance <= 0)
+    step(paste0("distance > 0 (recovery: ", method, ")"), no_distance & !recovered)
   }
   stratum <- station_strata(st, polygons, cfg$data$stratum_label)
   step("start position inside the strata", is.na(stratum))
   kept <- table(factor(stratum[keep], levels = cfg$data$stratum_names))
+  by_stratum <- tibble::tibble(stratum = names(kept), n_kept = as.integer(kept))
+  if ("includeintotal" %in% names(polygons)) {
+    flag <- polygons$includeintotal[match(by_stratum$stratum,
+                                          polygons[[cfg$data$stratum_label]])]
+    by_stratum$include_in_total <- flag
+  }
   structure(
-    list(rules = dplyr::bind_rows(rows),
-         by_stratum = tibble::tibble(stratum = names(kept), n_kept = as.integer(kept))),
+    list(rules = dplyr::bind_rows(rows), distance = distance, by_stratum = by_stratum),
     class = "nb_inclusion"
   )
 }
@@ -404,6 +463,13 @@ inclusion_counts <- function(st, cfg, polygons) {
 print.nb_inclusion <- function(x, ...) {
   cat("<nb_inclusion> station counts only\n")
   print(x$rules, n = Inf, width = Inf)
+  d <- x$distance
+  if (d$n_zero_or_missing > 0) {
+    cat(sprintf(paste0("\nFlag: %d station(s) with zero or missing distance; recoverable from ",
+                       "the log: %d, from positions only: %d; recovered (%s): %d.\n"),
+                d$n_zero_or_missing, d$n_recoverable_from_log,
+                d$n_recoverable_from_positions_only, d$recovery, d$n_recovered))
+  }
   cat("\nStations kept by stratum:\n")
   print(x$by_stratum, n = Inf)
   invisible(x)

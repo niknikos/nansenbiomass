@@ -198,7 +198,12 @@ test_that("inclusion_summary() excludes exactly the planted stations", {
   expect_equal(r$n_excluded[r$rule == "stationtype in {12}"], 4L)
   expect_equal(r$n_excluded[r$rule == "samplequality in {12}"], 3L)
   expect_equal(r$n_excluded[r$rule == "gearcondition in {1, 2}"], 0L)
-  expect_equal(r$n_excluded[r$rule == "distance > 0"], 2L)
+  expect_equal(r$n_excluded[r$rule == "distance > 0 (recovery: none)"], 2L)
+  expect_equal(inc$distance$n_zero_or_missing, 2L)
+  expect_equal(inc$distance$n_recoverable_from_log, 2L)
+  expect_equal(inc$distance$n_recovered, 0L)
+  expect_match(paste(utils::capture.output(print(inc)), collapse = "\n"),
+               "Flag: 2 station\\(s\\) with zero or missing distance")
   expect_equal(r$n_excluded[r$rule == "start position inside the strata"], 0L)
   expect_equal(r$n_after[nrow(r)], 45L)
   design <- s$sv$design$strata
@@ -230,4 +235,55 @@ test_that("stations outside the strata are counted, and polygons need the label"
   cfg$data$stratum_label <- "Name"
   cnd <- expect_error(inclusion_summary(cfg, root = s$root), class = "nansenbiomass_error")
   expect_equal(cnd$nb_code, "SX-STRATA-02")
+})
+
+test_that("zero distances are recovered from the log, or from positions, when configured", {
+  s <- synthetic_root(excluded = c(zero_distance = 3))
+  cfg <- read_config(example_config())
+  cfg$inclusion$distance_recovery <- "log"
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_equal(inc$distance$n_recovered, 3L)
+  expect_equal(inc$rules$n_excluded[grepl("^distance", inc$rules$rule)], 0L)
+  expect_equal(inc$rules$n_after[nrow(inc$rules)], 48L)
+
+  # Without usable logs, only positions can recover the distance
+  xml <- file.path(s$root, "surveys", "synthetic-seed1.xml")
+  x <- readLines(xml)
+  x <- x[!grepl("<logstop>", x)]
+  writeLines(x, xml)
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_equal(inc$distance$n_recoverable_from_log, 0L)
+  expect_equal(inc$distance$n_recoverable_from_positions_only, 3L)
+  expect_equal(inc$distance$n_recovered, 0L)
+  cfg$inclusion$distance_recovery <- "log_or_positions"
+  expect_equal(inclusion_summary(cfg, root = s$root)$distance$n_recovered, 3L)
+})
+
+test_that("position distances are great-circle distances in nautical miles", {
+  # One minute of latitude is one nautical mile
+  expect_equal(position_distance_nmi(-30, -120, -30 + 1 / 60, -120), 1, tolerance = 1e-3)
+})
+
+test_that("strata can be read from a StoX 2.7 project.xml, with includeintotal", {
+  skip_if_not_installed("RstoxBase")
+  s <- synthetic_root(excluded = c(pelagic = 0))
+  wkt <- sf::st_as_text(sf::st_geometry(s$sv$strata))
+  include <- c("true", "true", "true", "false")
+  values <- unlist(lapply(seq_along(wkt), function(i) c(
+    sprintf('      <value polygonkey="%s" polygonvariable="includeintotal">%s</value>',
+            s$sv$strata$stratum[i], include[i]),
+    sprintf('      <value polygonkey="%s" polygonvariable="polygon">%s</value>',
+            s$sv$strata$stratum[i], wkt[i])
+  )))
+  dir.create(file.path(s$root, "stox_official", "synthetic", "process"), recursive = TRUE)
+  writeLines(c('<?xml version="1.0" encoding="UTF-8"?>',
+               '<project xmlns="http://www.imr.no/formats/stox/v1">',
+               '  <processdata>', '    <stratumpolygon>', values, '    </stratumpolygon>',
+               '  </processdata>', '</project>'),
+             file.path(s$root, "stox_official", "synthetic", "process", "project.xml"))
+  cfg <- read_config(example_config())
+  cfg$data$strata <- "stox_official/synthetic/process/project.xml"
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_equal(inc$rules$n_after[nrow(inc$rules)], 45L)
+  expect_equal(inc$by_stratum$include_in_total, c(TRUE, TRUE, TRUE, FALSE))
 })

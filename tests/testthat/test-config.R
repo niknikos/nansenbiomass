@@ -63,6 +63,8 @@ test_that("invalid configurations fail by code, naming fields but not values", {
   expect_equal(code_of(validate_config(x)), "CF-VAL-01")
   x <- raw(); x$bootstrap$replicates <- 0
   expect_equal(code_of(validate_config(x)), "CF-VAL-02")
+  x <- raw(); x$inclusion$distance_recovery <- "guess"
+  expect_equal(code_of(validate_config(x)), "CF-VAL-01")
   x <- raw(); x$stox$version <- "latest"
   expect_equal(code_of(validate_config(x)), "CF-VAL-01")
 })

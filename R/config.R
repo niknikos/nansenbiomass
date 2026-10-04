@@ -89,6 +89,11 @@ validate_config <- function(cfg) {
       is.na(inc$positive_distance)) {
     cf_abort("CF-TYPE-01", "inclusion.positive_distance", "must be true or false")
   }
+  inc$distance_recovery <- if (is.null(inc$distance_recovery)) "none" else inc$distance_recovery
+  if (!is_string(inc$distance_recovery) ||
+      !inc$distance_recovery %in% c("none", "log", "log_or_positions")) {
+    cf_abort("CF-VAL-01", "inclusion.distance_recovery", "must be none, log or log_or_positions")
+  }
   cfg$inclusion <- inc
 
   # swept width
@@ -147,13 +152,16 @@ validate_config <- function(cfg) {
 #' [validate_config()]. The schema:
 #'
 #' * `survey`: `label` (text) and `year`.
-#' * `data`: `biotic` (one or more biotic files), `strata` (the stratum polygon
-#'   file, for example GeoJSON), both relative to `NANSEN_DATA_ROOT`;
+#' * `data`: `biotic` (one or more biotic files), `strata` (a stratum polygon
+#'   file in any format sf reads, or a StoX 2.7 `project.xml` holding the
+#'   strata), both relative to `NANSEN_DATA_ROOT`;
 #'   `stratum_label`, the polygon attribute holding stratum names (default
 #'   `StratumName`, as in StoX); and `stratum_names`.
 #' * `inclusion`: allowed `stationtype`, `samplequality` and `gearcondition`
-#'   codes (a field left out means no restriction) and `positive_distance`
-#'   (default `true`). See `docs/nansis-codes.md` for the codes (D-09).
+#'   codes (a field left out means no restriction), `positive_distance`
+#'   (default `true`) and `distance_recovery` for zero or missing distances
+#'   (`none`, the default, `log` or `log_or_positions`). See
+#'   `docs/nansis-codes.md` for the codes (D-09).
 #' * `swept_width`: `method` (`fixed` or `trawldoorspread`) and `fixed_m` (the
 #'   width in metres, or the fallback where a door spread is missing).
 #' * `species`: species codes; `quantities`: `biomass` and/or `abundance`.

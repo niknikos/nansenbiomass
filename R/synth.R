@@ -407,8 +407,9 @@ synth_survey_impl <- function(design, seed) {
   hours <- 6L + 3L * ((seq_len(n_st) - 1L) %% 4L)
   times <- sprintf("%02d:15:00.000Z", hours)
   stop_times <- sprintf("%02d:45:00.000Z", hours)
-  # Tows last 30 minutes; the log runs on from an arbitrary 1000 nmi.
-  log_start <- round(1000 + cumsum(c(0, stations$distance_recorded[-n_st] + 20)), 2)
+  # Tows last 30 minutes; the log runs on from an arbitrary 1000 nmi and records
+  # the distance actually towed, also where the distance field says 0.
+  log_start <- round(1000 + cumsum(c(0, stations$distance[-n_st] + 20)), 2)
   mission_keys <- tibble::tibble(missiontype = m$missiontype, startyear = design$year,
                                  platform = m$platform, missionnumber = m$missionnumber)
   station <- tibble::tibble(
@@ -432,7 +433,7 @@ synth_survey_impl <- function(design, seed) {
     fishingdepthmax = NA_real_,
     vesselspeed = round(stations$distance_recorded / 0.5, 1),
     logstart = log_start,
-    logstop = log_start + stations$distance_recorded,
+    logstop = log_start + stations$distance,
     verticaltrawlopening = round(stats::runif(n_st, 4.5, 5.5), 1),
     trawldoorspread = stations$trawldoorspread,
     haulvalidity = NA_character_,

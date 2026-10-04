@@ -64,12 +64,23 @@ tests passing). The project lead runs `describe_stox_project()` on the official 
 and shares the reviewed output. Then Phase 3: the StoX template, the runner and
 `run_estimate()`, built against the installed RstoxFramework 4.2.1.
 
+**Zero distances and strata (4 October 2026, project lead).** Stations with a zero or
+missing towed distance are always flagged by `inclusion_summary()`, with the number whose
+distance can be recovered from the log (stop minus start) or, failing that, from the start
+and end positions. `inclusion.distance_recovery` (`none`, `log`, `log_or_positions`) decides
+whether recovered distances are used; the default `none` follows the official handling for
+reproduction. In Phase 3, recovered distances reach StoX through a translation table inside
+the generated project (in the data zone); the original biotic files are never altered.
+Strata come from any polygon file sf reads, or directly from a StoX 2.7 `project.xml`
+(through RstoxBase, as StoX itself does). StoX 2.7 strata carry an `includeintotal` flag,
+which `inclusion_summary()` reports per stratum: an official total may leave some strata
+out, which reproduction must follow.
+
 **Notes on Phase 2 (4 October 2026).** `yaml` moved from Suggests to Imports (already in
 `renv.lock`). The synthetic example configuration ships with the package in `inst/configs/`,
 so that examples and tests can use it; the repository's `configs/` holds real survey
-configurations. Stratum polygons are read with sf (GeoJSON and other formats it reads);
-polygons inside a StoX 2.7 `project.xml` are not read by `inclusion_summary()`, and the
-Phase 3 helper that extracts them to a polygon file covers that case.
+configurations. Stratum polygons are read with sf, or with RstoxBase from a StoX 2.7
+`project.xml`, so no separate extraction step is needed.
 
 ## Context
 
