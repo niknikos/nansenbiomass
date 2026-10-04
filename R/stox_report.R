@@ -30,14 +30,18 @@ tidy_report <- function(dt, codes, stratum = NULL, cols) {
 }
 
 # Converts the four reports of each quantity (baseline and bootstrap, by
-# stratum and total) into Section 9 rows. The estimate is the baseline value;
-# the CV is the bootstrap SD over the bootstrap mean; the interval is the 2.5% to
-# 97.5% percentile interval of the bootstrap.
+# stratum and total) into Section 9 rows. The estimate is the baseline value (or
+# the bootstrap mean, when the configuration asks for it); the CV is the bootstrap
+# SD over the bootstrap mean; the interval is the 2.5% to 97.5% percentile
+# interval of the bootstrap.
 stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
                                       run_time = Sys.time()) {
   codes <- cfg$species
   units <- c(biomass = "tonnes", abundance = "millions")
-  scale <- c(biomass = 1e-3, abundance = 1e-6)
+  # Catch-weight biomass is in kg; super-individual biomass is in grams
+  scale <- c(biomass = if (identical(cfg$biomass$method, "super_individuals")) 1e-6 else 1e-3,
+             abundance = 1e-6)
+  from_bootstrap <- identical(cfg$estimate$point, "bootstrap_mean")
   rows <- lapply(cfg$quantities, function(qty) {
     Q <- c(biomass = "Biomass", abundance = "Abundance")[[qty]]
     get <- function(prefix, part) reports[[paste0(prefix, Q, part)]]
@@ -59,7 +63,7 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
       stratum = m$stratum,
       method = "stox_sweptarea",
       quantity = qty,
-      value = m$value * scale[[qty]],
+      value = (if (from_bootstrap) m$mean else m$value) * scale[[qty]],
       unit = units[[qty]],
       cv = ifelse(is.finite(m$mean) & m$mean > 0, m$sd / m$mean, NA_real_),
       ci_lower = m$lower * scale[[qty]],

@@ -67,13 +67,10 @@ safe_clause <- function(clause) {
   field %in% filter_numeric_fields && grepl("^-?[0-9]+(\\.[0-9]+)?$", value)
 }
 
-# Returns the expression with its unsafe clauses replaced by a marker, and the
-# numbers of clauses shown and withheld.
-redact_expression <- function(x) {
-  none <- list(text = NA_character_, n_shown = 0L, n_withheld = 1L)
-  if (nchar(x) > filter_max_chars) return(none)
-  # Quoted values are masked, so that a connector inside a literal never splits
-  # the expression; an unbalanced quote makes the expression unparseable.
+# Splits an expression into clauses and the connectors between them. Quoted
+# values are masked, so that a connector inside a literal never splits the
+# expression; NULL if a quote is unbalanced (the expression cannot be parsed).
+split_expression <- function(x) {
   masked <- x
   q <- gregexpr("'[^']*'|\"[^\"]*\"", x)[[1]]
   if (q[1] > 0L) {
@@ -82,10 +79,20 @@ redact_expression <- function(x) {
         strrep("_", attr(q, "match.length")[i])
     }
   }
-  if (grepl("['\"]", masked)) return(none)
+  if (grepl("['\"]", masked)) return(NULL)
   m <- gregexpr("\\s+(and|or)\\s+|&&?|\\|\\|?", masked, ignore.case = TRUE, perl = TRUE)
-  clauses <- regmatches(x, m, invert = TRUE)[[1]]
-  connectors <- trimws(regmatches(x, m)[[1]])
+  list(clauses = regmatches(x, m, invert = TRUE)[[1]], connectors = trimws(regmatches(x, m)[[1]]))
+}
+
+# Returns the expression with its unsafe clauses replaced by a marker, and the
+# numbers of clauses shown and withheld.
+redact_expression <- function(x) {
+  none <- list(text = NA_character_, n_shown = 0L, n_withheld = 1L)
+  if (nchar(x) > filter_max_chars) return(none)
+  parts <- split_expression(x)
+  if (is.null(parts)) return(none)
+  clauses <- parts$clauses
+  connectors <- parts$connectors
   if (length(clauses) > filter_max_clauses) return(none)
   ok <- vapply(clauses, safe_clause, logical(1), USE.NAMES = FALSE)
   shown <- ifelse(ok, trimws(clauses), "<withheld clause>")
@@ -579,7 +586,7 @@ inclusion_summary <- function(config, root = data_root()) {
     {
       survey <- read_biotic(files)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
-      inclusion_counts(survey$station, cfg, polygons)
+      inclusion_counts(survey$station, cfg, polygons, read_station_exclusions(cfg, root))
     },
     log_dir = file.path(root, "logs"),
     code = "SX-INC-01",
@@ -592,7 +599,7 @@ inclusion_summary <- function(config, root = data_root()) {
 # and the StoX project is built from the same result. The returned `keep`,
 # `stratum` and `distance_used` are station-level (C1) and never leave the
 # data zone.
-apply_inclusion <- function(st, cfg, polygons) {
+apply_inclusion <- function(st, cfg, polygons, exclude = NULL) {
   keep <- rep(TRUE, nrow(st))
   rows <- list()
   step <- function(rule, bad) {
@@ -609,6 +616,16 @@ apply_inclusion <- function(st, cfg, polygons) {
     if (!is.null(allowed)) {
       step(paste0(f, " in {", paste(allowed, collapse = ", "), "}"), !st[[f]] %in% allowed)
     }
+  }
+  # Stations listed in the exclusion file (serial numbers; station-level, kept in the data zone)
+  if (!is.null(exclude)) {
+    listed <- as.character(st$serialnumber) %in% exclude
+    if (sum(listed) < length(exclude)) {
+      nb_warn("SX-EXC-03", paste0(length(exclude) - sum(listed),
+                                  " listed stations are not in the biotic files."))
+    }
+    step(sprintf("not in the exclusion list (%d listed, %d in the files)", length(exclude), sum(listed)),
+         listed)
   }
   # Zero or missing distances are always flagged, with what could be recovered;
   # the configuration decides whether recovered distances are used.
@@ -642,8 +659,22 @@ apply_inclusion <- function(st, cfg, polygons) {
        rules = dplyr::bind_rows(rows), distance = distance)
 }
 
-inclusion_counts <- function(st, cfg, polygons) {
-  inc <- apply_inclusion(st, cfg, polygons)
+# Serial numbers of the stations to leave out, from the file the configuration
+# names (a path in the data zone); NULL if the configuration names none. A line
+# that is not a plain serial number is refused without echoing it.
+read_station_exclusions <- function(cfg, root) {
+  path <- cfg$inclusion$exclude_stations_file
+  if (is.null(path)) return(NULL)
+  lines <- trimws(readLines(resolve_data_path(path, root), warn = FALSE, encoding = "UTF-8"))
+  lines <- lines[nzchar(lines) & !startsWith(lines, "#")]
+  if (!all(grepl("^[A-Za-z0-9._-]{1,20}$", lines))) {
+    nb_abort("SX-EXC-02", "The exclusion file has a line that is not a serial number.")
+  }
+  unique(lines)
+}
+
+inclusion_counts <- function(st, cfg, polygons, exclude = NULL) {
+  inc <- apply_inclusion(st, cfg, polygons, exclude)
   kept <- table(factor(inc$stratum[inc$keep], levels = cfg$data$stratum_names))
   by_stratum <- tibble::tibble(stratum = names(kept), n_kept = as.integer(kept))
   if ("includeintotal" %in% names(polygons)) {
@@ -711,9 +742,14 @@ check_station_keys <- function(survey) {
 #' In this version the swept width is a fixed value (`swept_width.method:
 #' fixed`): StoX 4.2.1 does not take a haul-specific door spread through
 #' its swept-area density, so `trawldoorspread` is refused with a message.
-#' Biomass comes from catch weights and abundance from length distributions, as
-#' two branches of the StoX chain (template `sweptarea`). Every step runs under
-#' sanitised errors, with details in `<root>/logs/`.
+#' Abundance comes from length distributions. Biomass comes either from catch
+#' weights (`biomass.method: total_catch`, the default) or through
+#' super-individuals, from abundance by length and individual weights with
+#' imputation of missing weights (`biomass.method: super_individuals`, as in many
+#' StoX projects); see [read_config()]. Only the configured species are estimated,
+#' and hauls without them stay in the stratum means. The chain is the versioned
+#' template `sweptarea`. Every step runs under sanitised errors, with details in
+#' `<root>/logs/`.
 #'
 #' @param config A configuration file path (the hash of the file is recorded),
 #'   or an `nb_config` from [read_config()].
@@ -762,10 +798,21 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       survey <- read_biotic(files)
       check_station_keys(survey)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
-      inc <- apply_inclusion(survey$station, cfg, polygons)
+      inc <- apply_inclusion(survey$station, cfg, polygons, read_station_exclusions(cfg, root))
       if (!any(inc$keep)) nb_abort("SX-INC-02", "No station is kept by the inclusion rules.")
       st <- survey$station
       keys <- as.character(st$serialnumber[inc$keep])
+
+      # The species of the estimate, as StoX names them
+      categories <- stox_species_categories(files, cfg$species)
+      found <- species_from_category(categories, cfg$species)
+      if (length(categories) == 0L) {
+        nb_abort("SX-SPC-01", "None of the configured species is in the biotic files.")
+      }
+      if (!all(cfg$species %in% found)) {
+        nb_warn("SX-SPC-03", paste0(sum(!cfg$species %in% found),
+                                    " configured species are not in the biotic files."))
+      }
 
       # Recovered distances reach StoX through a translation inside the project.
       old <- st$distance
@@ -784,7 +831,8 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
 
       built <- build_stox_project(
         cfg, list(biotic_files = files, strata_file = strata_file, keep_keys = keys,
-                  translation = translation, total_strata = total_strata),
+                  species_categories = categories, translation = translation,
+                  total_strata = total_strata),
         project_path
       )
       r <- log_stox_messages(

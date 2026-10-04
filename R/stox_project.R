@@ -114,44 +114,94 @@ bootstrap_cores <- function(cfg) {
   as.integer(max(1L, min(n, cfg$bootstrap$replicates)))
 }
 
+# The StoX species categories (a name, the catch category code, an Aphia code and a
+# scientific name, joined by "/") of the configured species, as they appear in the
+# biotic files. The filter on them is built from these, so no species list is
+# written by hand.
+stox_species_categories <- function(files, codes) {
+  sb <- RstoxData::StoxBiotic(RstoxData::ReadBiotic(files))
+  cats <- unique(as.character(sb$SpeciesCategory$SpeciesCategory))
+  cats <- cats[!is.na(species_from_category(cats, codes))]
+  if (any(grepl("['\"\\\\]", cats))) {
+    nb_abort("SX-SPC-02", "A species category name contains a quote or backslash that a StoX filter cannot take.")
+  }
+  cats
+}
+
 # Builds the StoX project for one run and returns what the runner needs.
 #
 # `inputs`: biotic_files, strata_file, keep_keys (HaulKey values of the stations
-# to keep), translation (NULL or a table of Value, NewValue, HaulKey) and
-# total_strata (strata that count towards the total).
+# to keep), species_categories (the StoX species categories to keep), translation
+# (NULL or a table of EffectiveTowDistance, NewValue and HaulKey) and total_strata
+# (strata that count towards the total).
 build_stox_project <- function(cfg, inputs, project_path) {
   tpl <- read_stox_template()
   q <- cfg$quantities
-  flags <- list(biomass = "biomass" %in% q, abundance = "abundance" %in% q,
-                distance_translation = !is.null(inputs$translation))
-  methods <- c(abundance = "ResampleMeanLengthDistributionData",
-               biomass = "ResampleMeanSpeciesCategoryCatchData")
-  processes <- c(abundance = "MeanLengthDistribution", biomass = "MeanSpeciesCategoryCatch")
-  use <- names(methods)[unlist(flags[names(methods)])]
+  route <- cfg$biomass$method
+  has <- function(x) x %in% q
+  flags <- list(
+    biomass = has("biomass"), abundance = has("abundance"),
+    route_catch = route == "total_catch", route_si = route == "super_individuals",
+    distance_translation = !is.null(inputs$translation),
+    regroup = !is.na(cfg$lengths$interval_cm),
+    abundance_branch = (route == "total_catch" && has("abundance")) || route == "super_individuals",
+    catch_biomass = route == "total_catch" && has("biomass"),
+    catch_abundance = route == "total_catch" && has("abundance"),
+    si_biomass = route == "super_individuals" && has("biomass"),
+    si_abundance = route == "super_individuals" && has("abundance")
+  )
+  # What the bootstrap resamples, and what it returns
+  if (route == "super_individuals") {
+    boot_table <- data.table::data.table(
+      ProcessName = "MeanLengthDistribution",
+      ResampleFunction = "ResampleMeanLengthDistributionData", Seed = cfg$bootstrap$seed
+    )
+    output <- "ImputeSuperIndividuals"
+  } else {
+    methods <- c(abundance = "ResampleMeanLengthDistributionData",
+                 biomass = "ResampleMeanSpeciesCategoryCatchData")
+    processes <- c(abundance = "MeanLengthDistribution", biomass = "MeanSpeciesCategoryCatch")
+    use <- names(methods)[unlist(flags[names(methods)])]
+    boot_table <- data.table::data.table(
+      ProcessName = unname(processes[use]), ResampleFunction = unname(methods[use]),
+      Seed = cfg$bootstrap$seed
+    )
+    output <- unname(c(biomass = "Biomass", abundance = "Abundance")[use])
+  }
   keys <- paste0("'", gsub("'", "", inputs$keep_keys), "'", collapse = ",")
+  cats <- paste0("'", inputs$species_categories, "'", collapse = ",")
   all_in <- setequal(inputs$total_strata, cfg$data$stratum_names)
+  imp <- cfg$biomass$imputation
   values <- list(
     biotic_files = inputs$biotic_files,
     strata_file = inputs$strata_file,
     stratum_label = cfg$data$stratum_label,
     stoxbiotic_process = if (flags$distance_translation) "TranslateStoxBiotic" else "StoxBiotic",
     filter_expression = list(Haul = paste0("HaulKey %in% c(", keys, ")")),
+    species_filter_expression = list(SpeciesCategory = paste0("SpeciesCategory %in% c(", cats, ")")),
     translation_table = inputs$translation,
     raising_factor_priority = cfg$catch$raising_factor_priority,
+    length_interval = cfg$lengths$interval_cm,
+    length_process = if (flags$regroup) "Regroup" else "LengthDistribution",
     sweep_width_m = cfg$swept_width$fixed_m,
+    si_distribution_method = cfg$biomass$distribution_method,
+    impute_method = imp$method,
+    impute_at_missing = imp$at_missing,
+    impute_to = imp$to_impute,
+    impute_by_equal = imp$by_equal,
+    impute_levels = imp$levels,
+    impute_seed = imp$seed,
     replicates = cfg$bootstrap$replicates,
     cores = bootstrap_cores(cfg),
-    output_processes = c(biomass = "Biomass", abundance = "Abundance")[use],
-    bootstrap_method_table = data.table::data.table(
-      ProcessName = unname(processes[use]), ResampleFunction = unname(methods[use]),
-      ResampleBy = "Stratum", Seed = cfg$bootstrap$seed
-    ),
+    output_processes = output,
+    bootstrap_method_table = boot_table,
+    baseline_seed_table = data.table::data.table(ProcessName = "ImputeSuperIndividuals",
+                                                 Seed = cfg$bootstrap$impute_seed),
     # Strata outside the survey get no Survey label and drop out of the total.
     survey_method = if (all_in) "AllStrata" else "Table",
     survey_table = if (all_in) data.table::data.table() else
       data.table::data.table(Stratum = inputs$total_strata, Survey = "Survey")
   )
-  values$output_processes <- unname(values$output_processes)
 
   RstoxFramework::createProject(project_path, ow = TRUE, open = TRUE)
   for (proc in tpl$processes) {

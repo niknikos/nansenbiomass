@@ -1,8 +1,8 @@
 {
  "template": "sweptarea",
- "template_version": "1.0.0",
+ "template_version": "2.0.0",
  "stox_version": "4.2.1",
- "description": "StoX swept-area chain: biomass from catch weight and abundance from length distributions (two branches), one PSU per station, bootstrap of PSUs within strata. Structure only (class C3); filled from a survey configuration by the package, never edited by hand.",
+ "description": "StoX swept-area chain. Abundance from length distributions (optionally regrouped); biomass either from catch weight (total_catch) or through super-individuals (super_individuals, as in many StoX projects); one PSU per station; bootstrap of the mean length distribution; species and station filters. Structure only (class C3); filled from a survey configuration by the package, never edited by hand.",
  "processes": [
   {
    "model": "baseline",
@@ -60,6 +60,18 @@
   },
   {
    "model": "baseline",
+   "name": "SpeciesFilter",
+   "function": "RstoxData::FilterStoxBiotic",
+   "inputs": {
+    "StoxBioticData": "FilterStoxBiotic"
+   },
+   "parameters": {
+    "FilterExpression": "{{species_filter_expression}}",
+    "FilterUpwards": false
+   }
+  },
+  {
+   "model": "baseline",
    "name": "StratumPolygon",
    "function": "RstoxBase::DefineStratumPolygon",
    "parameters": {
@@ -108,26 +120,38 @@
    "name": "LengthDistribution",
    "function": "RstoxBase::LengthDistribution",
    "inputs": {
-    "StoxBioticData": "FilterStoxBiotic"
+    "StoxBioticData": "SpeciesFilter"
    },
    "parameters": {
     "LengthDistributionType": "Normalized",
     "RaisingFactorPriority": "{{raising_factor_priority}}"
    },
-   "when": "abundance"
+   "when": "abundance_branch"
+  },
+  {
+   "model": "baseline",
+   "name": "Regroup",
+   "function": "RstoxBase::RegroupLengthDistribution",
+   "inputs": {
+    "LengthDistributionData": "LengthDistribution"
+   },
+   "parameters": {
+    "LengthInterval": "{{length_interval}}"
+   },
+   "when": "regroup"
   },
   {
    "model": "baseline",
    "name": "SumLengthDistribution",
    "function": "RstoxBase::SumLengthDistribution",
    "inputs": {
-    "LengthDistributionData": "LengthDistribution",
+    "LengthDistributionData": "{{length_process}}",
     "BioticLayer": "BioticLayer"
    },
    "parameters": {
     "LayerDefinition": "FunctionInput"
    },
-   "when": "abundance"
+   "when": "abundance_branch"
   },
   {
    "model": "baseline",
@@ -144,7 +168,7 @@
     "SurveyDefinition": "FunctionInput",
     "PSUDefinition": "FunctionInput"
    },
-   "when": "abundance"
+   "when": "abundance_branch"
   },
   {
    "model": "baseline",
@@ -159,7 +183,7 @@
     "SweepWidth": "{{sweep_width_m}}",
     "DensityType": "AreaNumberDensity"
    },
-   "when": "abundance"
+   "when": "abundance_branch"
   },
   {
    "model": "baseline",
@@ -168,19 +192,19 @@
    "inputs": {
     "DensityData": "AbundanceDensity"
    },
-   "when": "abundance"
+   "when": "abundance_branch"
   },
   {
    "model": "baseline",
    "name": "SpeciesCategoryCatch",
    "function": "RstoxBase::SpeciesCategoryCatch",
    "inputs": {
-    "StoxBioticData": "FilterStoxBiotic"
+    "StoxBioticData": "SpeciesFilter"
    },
    "parameters": {
     "SpeciesCategoryCatchType": "Normalized"
    },
-   "when": "biomass"
+   "when": "catch_biomass"
   },
   {
    "model": "baseline",
@@ -193,7 +217,7 @@
    "parameters": {
     "LayerDefinition": "FunctionInput"
    },
-   "when": "biomass"
+   "when": "catch_biomass"
   },
   {
    "model": "baseline",
@@ -210,7 +234,7 @@
     "SurveyDefinition": "FunctionInput",
     "PSUDefinition": "FunctionInput"
    },
-   "when": "biomass"
+   "when": "catch_biomass"
   },
   {
    "model": "baseline",
@@ -225,7 +249,7 @@
     "SweepWidth": "{{sweep_width_m}}",
     "DensityType": "AreaWeightDensity"
    },
-   "when": "biomass"
+   "when": "catch_biomass"
   },
   {
    "model": "baseline",
@@ -234,7 +258,7 @@
    "inputs": {
     "DensityData": "BiomassDensity"
    },
-   "when": "biomass"
+   "when": "catch_biomass"
   },
   {
    "model": "baseline",
@@ -255,7 +279,7 @@
     "MeanDensityData": "MeanAbundanceDensity",
     "StratumAreaData": "StratumArea"
    },
-   "when": "abundance"
+   "when": "abundance_branch"
   },
   {
    "model": "baseline",
@@ -265,7 +289,51 @@
     "MeanDensityData": "MeanBiomassDensity",
     "StratumAreaData": "StratumArea"
    },
-   "when": "biomass"
+   "when": "catch_biomass"
+  },
+  {
+   "model": "baseline",
+   "name": "Individuals",
+   "function": "RstoxBase::Individuals",
+   "inputs": {
+    "StoxBioticData": "SpeciesFilter",
+    "MeanLengthDistributionData": "MeanLengthDistribution"
+   },
+   "parameters": {
+    "QuantityType": "SweptArea"
+   },
+   "when": "route_si"
+  },
+  {
+   "model": "baseline",
+   "name": "SuperIndividuals",
+   "function": "RstoxBase::SuperIndividuals",
+   "inputs": {
+    "IndividualsData": "Individuals",
+    "QuantityData": "Abundance",
+    "LengthDistributionData": "{{length_process}}"
+   },
+   "parameters": {
+    "DistributionMethod": "{{si_distribution_method}}"
+   },
+   "when": "route_si"
+  },
+  {
+   "model": "baseline",
+   "name": "ImputeSuperIndividuals",
+   "function": "RstoxBase::ImputeSuperIndividuals",
+   "inputs": {
+    "SuperIndividualsData": "SuperIndividuals"
+   },
+   "parameters": {
+    "ImputationMethod": "{{impute_method}}",
+    "ImputeAtMissing": "{{impute_at_missing}}",
+    "ToImpute": "{{impute_to}}",
+    "ImputeByEqual": "{{impute_by_equal}}",
+    "ImputationLevels": "{{impute_levels}}",
+    "Seed": "{{impute_seed}}"
+   },
+   "when": "route_si"
   },
   {
    "model": "analysis",
@@ -276,7 +344,21 @@
     "NumberOfBootstraps": "{{replicates}}",
     "OutputProcesses": "{{output_processes}}",
     "NumberOfCores": "{{cores}}"
-   }
+   },
+   "when": "route_catch"
+  },
+  {
+   "model": "analysis",
+   "name": "Bootstrap",
+   "function": "RstoxFramework::Bootstrap",
+   "parameters": {
+    "BootstrapMethodTable": "{{bootstrap_method_table}}",
+    "NumberOfBootstraps": "{{replicates}}",
+    "OutputProcesses": "{{output_processes}}",
+    "BaselineSeedTable": "{{baseline_seed_table}}",
+    "NumberOfCores": "{{cores}}"
+   },
+   "when": "route_si"
   },
   {
    "model": "report",
@@ -293,24 +375,7 @@
      "SpeciesCategory"
     ]
    },
-   "when": "biomass"
-  },
-  {
-   "model": "report",
-   "name": "ReportBiomassTotal",
-   "function": "RstoxBase::ReportQuantity",
-   "inputs": {
-    "QuantityData": "Biomass"
-   },
-   "parameters": {
-    "TargetVariable": "Biomass",
-    "ReportFunction": "sum",
-    "GroupingVariables": [
-     "Survey",
-     "SpeciesCategory"
-    ]
-   },
-   "when": "biomass"
+   "when": "catch_biomass"
   },
   {
    "model": "report",
@@ -333,7 +398,24 @@
      97.5
     ]
    },
-   "when": "biomass"
+   "when": "catch_biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBiomassTotal",
+   "function": "RstoxBase::ReportQuantity",
+   "inputs": {
+    "QuantityData": "Biomass"
+   },
+   "parameters": {
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "catch_biomass"
   },
   {
    "model": "report",
@@ -356,7 +438,87 @@
      97.5
     ]
    },
-   "when": "biomass"
+   "when": "catch_biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBiomassByStratum",
+   "function": "RstoxBase::ReportSuperIndividuals",
+   "inputs": {
+    "SuperIndividualsData": "ImputeSuperIndividuals"
+   },
+   "parameters": {
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "si_biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapBiomassByStratum",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "ImputeSuperIndividuals",
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "si_biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBiomassTotal",
+   "function": "RstoxBase::ReportSuperIndividuals",
+   "inputs": {
+    "SuperIndividualsData": "ImputeSuperIndividuals"
+   },
+   "parameters": {
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "si_biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapBiomassTotal",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "ImputeSuperIndividuals",
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "si_biomass"
   },
   {
    "model": "report",
@@ -373,24 +535,7 @@
      "SpeciesCategory"
     ]
    },
-   "when": "abundance"
-  },
-  {
-   "model": "report",
-   "name": "ReportAbundanceTotal",
-   "function": "RstoxBase::ReportQuantity",
-   "inputs": {
-    "QuantityData": "Abundance"
-   },
-   "parameters": {
-    "TargetVariable": "Abundance",
-    "ReportFunction": "sum",
-    "GroupingVariables": [
-     "Survey",
-     "SpeciesCategory"
-    ]
-   },
-   "when": "abundance"
+   "when": "catch_abundance"
   },
   {
    "model": "report",
@@ -413,7 +558,24 @@
      97.5
     ]
    },
-   "when": "abundance"
+   "when": "catch_abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportAbundanceTotal",
+   "function": "RstoxBase::ReportQuantity",
+   "inputs": {
+    "QuantityData": "Abundance"
+   },
+   "parameters": {
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "catch_abundance"
   },
   {
    "model": "report",
@@ -436,7 +598,87 @@
      97.5
     ]
    },
-   "when": "abundance"
+   "when": "catch_abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportAbundanceByStratum",
+   "function": "RstoxBase::ReportSuperIndividuals",
+   "inputs": {
+    "SuperIndividualsData": "ImputeSuperIndividuals"
+   },
+   "parameters": {
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "si_abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapAbundanceByStratum",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "ImputeSuperIndividuals",
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "si_abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportAbundanceTotal",
+   "function": "RstoxBase::ReportSuperIndividuals",
+   "inputs": {
+    "SuperIndividualsData": "ImputeSuperIndividuals"
+   },
+   "parameters": {
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "si_abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapAbundanceTotal",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "ImputeSuperIndividuals",
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "si_abundance"
   }
  ]
 }

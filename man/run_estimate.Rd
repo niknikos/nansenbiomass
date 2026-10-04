@@ -35,9 +35,14 @@ the support table and stages both with \code{\link[=stage_export]{stage_export()
 \details{
 In this version the swept width is a fixed value (\code{swept_width.method: fixed}): StoX 4.2.1 does not take a haul-specific door spread through
 its swept-area density, so \code{trawldoorspread} is refused with a message.
-Biomass comes from catch weights and abundance from length distributions, as
-two branches of the StoX chain (template \code{sweptarea}). Every step runs under
-sanitised errors, with details in \verb{<root>/logs/}.
+Abundance comes from length distributions. Biomass comes either from catch
+weights (\code{biomass.method: total_catch}, the default) or through
+super-individuals, from abundance by length and individual weights with
+imputation of missing weights (\code{biomass.method: super_individuals}, as in many
+StoX projects); see \code{\link[=read_config]{read_config()}}. Only the configured species are estimated,
+and hauls without them stay in the stratum means. The chain is the versioned
+template \code{sweptarea}. Every step runs under sanitised errors, with details in
+\verb{<root>/logs/}.
 }
 \examples{
 if (requireNamespace("RstoxFramework", quietly = TRUE)) {

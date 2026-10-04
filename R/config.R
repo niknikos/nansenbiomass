@@ -94,6 +94,9 @@ validate_config <- function(cfg) {
       !inc$distance_recovery %in% c("none", "log", "log_or_positions")) {
     cf_abort("CF-VAL-01", "inclusion.distance_recovery", "must be none, log or log_or_positions")
   }
+  if (!is.null(inc$exclude_stations_file)) {
+    check_config_path(inc$exclude_stations_file, "inclusion.exclude_stations_file")
+  }
   cfg$inclusion <- inc
 
   # swept width
@@ -126,7 +129,10 @@ validate_config <- function(cfg) {
   if (!is.null(cores) && (!whole_number(cores) || cores < 1)) {
     cf_abort("CF-VAL-02", "bootstrap.cores", "must be a positive whole number, or left out for the machine's cores minus 2")
   }
-  cfg$bootstrap <- list(replicates = as.integer(bs$replicates), seed = as.integer(bs$seed))
+  impute_seed <- if (is.null(bs$impute_seed)) bs$seed else bs$impute_seed
+  if (!whole_number(impute_seed)) cf_abort("CF-VAL-02", "bootstrap.impute_seed", "must be a whole number")
+  cfg$bootstrap <- list(replicates = as.integer(bs$replicates), seed = as.integer(bs$seed),
+                        impute_seed = as.integer(impute_seed))
   if (!is.null(cores)) cfg$bootstrap$cores <- as.integer(cores)
 
   # catch handling (to be set from the official projects, D-09)
@@ -136,6 +142,64 @@ validate_config <- function(cfg) {
     cf_abort("CF-VAL-01", "catch.raising_factor_priority", "must be Weight or Number")
   }
   cfg$catch <- list(raising_factor_priority = rfp)
+
+  # length groups: regrouping of the length distribution, in centimetres (optional)
+  li <- cfg$lengths$interval_cm
+  if (!is.null(li) && !(length(li) == 1L && is.na(li))) {   # NA: already validated, no regrouping
+    if (!is.numeric(li) || length(li) != 1L || li <= 0) {
+      cf_abort("CF-VAL-02", "lengths.interval_cm", "must be a positive number of centimetres")
+    }
+  }
+  cfg$lengths <- list(interval_cm = if (is.null(li)) NA_real_ else as.numeric(li))
+
+  # biomass route: from catch weights, or through super-individuals (D-09)
+  bm <- cfg$biomass
+  method <- if (is.null(bm$method)) "total_catch" else bm$method
+  if (!is_string(method) || !method %in% c("total_catch", "super_individuals")) {
+    cf_abort("CF-VAL-01", "biomass.method", "must be total_catch or super_individuals")
+  }
+  names_of <- function(x, default, field) {
+    x <- if (is.null(x)) default else as.character(unlist(x))
+    if (length(x) == 0L || anyNA(x) || !all(grepl("^[A-Za-z][A-Za-z0-9_]*$", x))) {
+      cf_abort("CF-TYPE-02", field, "must name StoX variables")
+    }
+    x
+  }
+  dm <- if (is.null(bm$distribution_method)) "Equal" else bm$distribution_method
+  if (!is_string(dm) || !dm %in% c("Equal", "HaulDensity")) {
+    cf_abort("CF-VAL-01", "biomass.distribution_method", "must be Equal or HaulDensity")
+  }
+  imp <- bm$imputation
+  imp_method <- if (is.null(imp$method)) "RandomSampling" else imp$method
+  if (!is_string(imp_method) || !identical(imp_method, "RandomSampling")) {
+    cf_abort("CF-VAL-01", "biomass.imputation.method", "must be RandomSampling")
+  }
+  levels <- names_of(imp$levels, c("Haul", "Stratum", "Survey"), "biomass.imputation.levels")
+  if (!all(levels %in% c("Haul", "Stratum", "Survey"))) {
+    cf_abort("CF-VAL-01", "biomass.imputation.levels", "must be Haul, Stratum and/or Survey")
+  }
+  imp_seed <- if (is.null(imp$seed)) 1L else imp$seed
+  if (!whole_number(imp_seed)) cf_abort("CF-VAL-02", "biomass.imputation.seed", "must be a whole number")
+  at_missing <- names_of(imp$at_missing, "IndividualRoundWeight", "biomass.imputation.at_missing")
+  if (length(at_missing) != 1L) {
+    cf_abort("CF-TYPE-02", "biomass.imputation.at_missing", "must name one StoX variable")
+  }
+  cfg$biomass <- list(
+    method = method,
+    distribution_method = dm,
+    imputation = list(
+      method = imp_method, levels = levels, seed = as.integer(imp_seed), at_missing = at_missing,
+      to_impute = names_of(imp$to_impute, "IndividualRoundWeight", "biomass.imputation.to_impute"),
+      by_equal = names_of(imp$by_equal, "SpeciesCategory", "biomass.imputation.by_equal")
+    )
+  )
+
+  # which value is reported as the estimate: the baseline run, or the bootstrap mean
+  point <- if (is.null(cfg$estimate$point)) "baseline" else cfg$estimate$point
+  if (!is_string(point) || !point %in% c("baseline", "bootstrap_mean")) {
+    cf_abort("CF-VAL-01", "estimate.point", "must be baseline or bootstrap_mean")
+  }
+  cfg$estimate <- list(point = point)
 
   # StoX version pin
   cfg$stox$version <- if (is.null(cfg$stox$version)) stox_pinned_version else cfg$stox$version
@@ -156,7 +220,7 @@ validate_config <- function(cfg) {
   cfg$disclosure <- list(min_stations = as.integer(dis$min_stations),
                          min_positive = as.integer(dis$min_positive))
 
-  structure(cfg[c(required, "quantities", "catch", "stox", "disclosure")], class = "nb_config")
+  structure(cfg[c(required, "quantities", "catch", "lengths", "biomass", "estimate", "stox", "disclosure")], class = "nb_config")
 }
 
 #' Read a survey configuration
@@ -173,15 +237,29 @@ validate_config <- function(cfg) {
 #' * `inclusion`: allowed `stationtype`, `samplequality` and `gearcondition`
 #'   codes (a field left out means no restriction), `positive_distance`
 #'   (default `true`) and `distance_recovery` for zero or missing distances
-#'   (`none`, the default, `log` or `log_or_positions`). See
+#'   (`none`, the default, `log` or `log_or_positions`), and optionally
+#'   `exclude_stations_file`, the path (relative to the data root) of a text file in the
+#'   data zone listing the serial numbers of stations to leave out, one per line (see
+#'   [stox_station_exclusions()]); station identifiers never belong in the repository. See
 #'   `docs/nansis-codes.md` for the codes (D-09).
 #' * `swept_width`: `method` (`fixed` or `trawldoorspread`) and `fixed_m` (the
 #'   width in metres, or the fallback where a door spread is missing).
 #' * `species`: species codes; `quantities`: `biomass` and/or `abundance`.
-#' * `bootstrap`: `replicates` and `seed` (D-10), and optionally `cores` (default:
+#' * `bootstrap`: `replicates` and `seed` (D-10), `impute_seed` (the seed of the imputation
+#'   of super-individuals in the bootstrap; default: `seed`), and optionally `cores` (default:
 #'   the machine's cores minus 2, at least 1, and not more than the replicates).
 #' * `catch`: `raising_factor_priority`, `Weight` (default) or `Number`, StoX's choice
 #'   of which raising information the length distribution uses.
+#' * `lengths`: `interval_cm`, the length group for regrouping the length distribution
+#'   (optional; none by default).
+#' * `biomass`: `method`, `total_catch` (the default: biomass from catch weights) or
+#'   `super_individuals` (biomass from abundance by length and individual weights, with
+#'   imputation of missing weights, as in many StoX projects); for the latter,
+#'   `distribution_method` (`Equal` or `HaulDensity`) and `imputation` with `method`
+#'   (`RandomSampling`), `levels` (any of `Haul`, `Stratum`, `Survey`), `at_missing`, `to_impute`,
+#'   `by_equal` (StoX variable names) and `seed`.
+#' * `estimate`: `point`, `baseline` (default) or `bootstrap_mean`: which value is reported as the
+#'   estimate.
 #' * `stox`: `version`, the RstoxFramework version the run must use.
 #' * `disclosure`: `min_stations` and `min_positive`, at least 5 and 3 (D-03).
 #'
@@ -235,5 +313,6 @@ print.nb_config <- function(x, ...) {
   cat("  positive distance:", x$inclusion$positive_distance, "\n")
   cat("  swept width:", x$swept_width$method, "(", x$swept_width$fixed_m, "m )\n")
   cat("  bootstrap:", x$bootstrap$replicates, "replicates, seed", x$bootstrap$seed, "\n")
+  cat("  biomass route:", x$biomass$method, "\n")
   invisible(x)
 }

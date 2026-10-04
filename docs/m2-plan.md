@@ -314,6 +314,31 @@ biomass route and the official-project plan:
   backward-compatibility actions and can open and run a copy of a 3.4 project, and the project's
   own saved output files (from the 3.4 run) serve as the reference.
 
+**Template 2.0.0 (4 October 2026).** `inst/stox/sweptarea/template.json` now has a species filter
+(`FilterUpwards` false, built from the StoX species categories of the configured species, so no
+species list is written by hand), optional regrouping of the length distribution
+(`lengths.interval_cm`), and two biomass routes chosen by `biomass.method`: `total_catch` (the
+default, unchanged behaviour) and `super_individuals` (`Individuals`, `SuperIndividuals`,
+`ImputeSuperIndividuals`; bootstrap of the mean length distribution plus an imputation seed
+table). New configuration values: `biomass.*` (including the imputation settings, whose official
+values are still to be read from the project), `lengths.interval_cm`, `bootstrap.impute_seed`
+(default: the bootstrap seed) and `estimate.point` (`baseline` or `bootstrap_mean`). On the
+synthetic survey both routes pass the airlock; abundance is identical in the two routes and
+biomass by super-individuals is within 0.7 to 2.3% of the catch-weight route in total (tested
+within 5% in total and 10% by stratum). Tests: 428 before this step; all pass after it.
+**Station exclusions (4 October 2026, WP3).** `inclusion.exclude_stations_file` names a text file in
+the data zone (serial numbers, one per line, `#` comments allowed; a line that is not a plain
+serial number is refused without echoing it). `apply_inclusion()` applies it as a rule step
+reported with counts ("n listed, n in the files"); `inclusion_summary()` and `run_estimate()`
+use the same function, and listed stations that are not in the biotic files are counted and
+reported with a warning. `stox_station_exclusions(project, biotic, out)` builds the file on the
+laptop from the official `project.json`: it reads a plain `Station %notin% c(...)` list (or
+`!Station %in% c(...)`, or a chain of `Station != '...'`; anything else on the field is refused),
+maps the StoX station keys to serial numbers through StoxBiotic built from the project's own copy of the
+biotic file, and prints counts only. If the StoX version that made the project builds keys
+differently from 4.2.1, the unmatched count shows it. Not yet done in Phase 3b: the version
+diagnostics (WP4).
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

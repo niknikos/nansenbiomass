@@ -308,8 +308,9 @@ quick_config <- function(replicates = 5L) {
 
 # The design-based estimate computed directly in R from the synthetic tables:
 # catch weight per swept area at each station, stratum means, times stratum area.
-direct_biomass <- function(sv, species, width_m = 20) {
+direct_biomass <- function(sv, species, width_m = 20, exclude = NULL) {
   st <- sv$stations[sv$stations$design_station, ]
+  st <- st[!as.character(st$serialnumber) %in% exclude, ]
   ca <- sv$survey$catch[sv$survey$catch$catchcategory == species, ]
   kg <- tapply(ca$catchweight, ca$serialnumber, sum)
   st$kg <- ifelse(as.character(st$serialnumber) %in% names(kg),
@@ -337,9 +338,11 @@ test_that("the template fills completely and refuses an unfilled placeholder", {
   expect_setequal(
     gsub("[{}]", "", used),
     c("biotic_files", "translation_table", "stoxbiotic_process", "filter_expression",
-      "strata_file", "stratum_label", "raising_factor_priority", "sweep_width_m", "cores",
-      "bootstrap_method_table", "replicates", "output_processes", "survey_method",
-      "survey_table")
+      "species_filter_expression", "strata_file", "stratum_label", "raising_factor_priority",
+      "length_interval", "length_process", "sweep_width_m", "cores", "si_distribution_method",
+      "impute_method", "impute_at_missing", "impute_to", "impute_by_equal", "impute_levels",
+      "impute_seed", "baseline_seed_table", "bootstrap_method_table", "replicates",
+      "output_processes", "survey_method", "survey_table")
   )
 })
 
@@ -365,7 +368,7 @@ test_that("run_estimate() reproduces the direct estimate and stages a passing ex
   expect_match(unique(est$config_hash), "^[0-9a-f]{32}$")
   expect_equal(unique(est$config_hash), config_hash(example_config()))
   expect_match(unique(est$code_version), "RstoxFramework 4\\.2\\.1; RstoxBase 2\\.2\\.1; RstoxData 2\\.2\\.1")
-  expect_match(unique(est$code_version), "template sweptarea [0-9.]+$")
+  expect_match(unique(est$code_version), "template sweptarea 2\\.0\\.0$")
   expect_true(all(est$value > 0))
 
   # The baseline estimate equals the direct design-based estimate, which uses
@@ -614,4 +617,197 @@ test_that("classify_stox_value() reports shown, partly withheld and withheld exp
   expect_equal(classify_stox_value("FishStationExpr", "HaulKey != 'a'")$fields, "HaulKey")
   # the operator word notin is not a field
   expect_equal(classify_stox_value("FilterExpression", "Station %notin% c('a', 'b')")$fields, "Station")
+})
+
+# ---- Template 2.0.0: species filter, super-individual route -----------------------
+
+test_that("the species categories of the configured species are found as StoX names them", {
+  skip_if_no_stox()
+  s <- synthetic_root(excluded = c(pelagic = 1))
+  f <- file.path(s$root, "surveys", "synthetic-seed1.xml")
+  cats <- stox_species_categories(f, c("SYN001", "SYN003", "NOPE"))
+  expect_length(cats, 2L)
+  expect_setequal(species_from_category(cats, c("SYN001", "SYN003")), c("SYN001", "SYN003"))
+  expect_length(stox_species_categories(f, "NOPE"), 0L)
+})
+
+test_that("only the configured species are estimated, and hauls without them stay in the mean", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  cfg <- quick_config(3L)
+  cfg$species <- "SYN003"       # a patchy species: absent at some stations
+  res <- suppressWarnings(run_estimate(cfg, root = s$root,
+                                       staging_dir = file.path(s$root, "staging")))
+  expect_setequal(unique(res$estimates$species_code), "SYN003")
+  direct <- direct_biomass(s$sv, "SYN003")
+  b <- res$estimates[res$estimates$quantity == "biomass" & res$estimates$stratum != "total", ]
+  # the stratum means include the stations where the species was not caught
+  expect_equal(b$value, as.numeric(direct[b$stratum]), tolerance = 1e-6)
+  tot <- res$estimates$value[res$estimates$quantity == "biomass" & res$estimates$stratum == "total"]
+  expect_equal(tot, sum(direct), tolerance = 1e-6)
+  # a configuration whose species are not in the files is refused
+  cfg$species <- "NOPE"
+  expect_error(run_estimate(cfg, root = s$root), "SX-RUN-01|SX-SPC-01")
+})
+
+test_that("biomass through super-individuals agrees with the catch-weight route", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  a <- suppressWarnings(run_estimate(quick_config(3L), root = s$root,
+                                     staging_dir = file.path(s$root, "stA")))
+  cfg <- quick_config(3L)
+  cfg$biomass$method <- "super_individuals"
+  cfg$lengths$interval_cm <- 2
+  b <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "stB")))
+  expect_equal(b$staged$outcome, "pass")
+  expect_match(unique(b$estimates$code_version), "template sweptarea 2\\.0\\.0$")
+  key <- c("species_code", "stratum", "quantity")
+  m <- merge(a$estimates[c(key, "value", "unit")], b$estimates[c(key, "value", "unit")], by = key,
+             suffixes = c(".catch", ".si"))
+  expect_equal(nrow(m), nrow(a$estimates))
+  expect_equal(m$unit.catch, m$unit.si)
+  # abundance follows the same chain in both routes
+  ab <- m[m$quantity == "abundance", ]
+  expect_equal(ab$value.si, ab$value.catch, tolerance = 1e-9)
+  # biomass: different estimators of the same quantity, within a few per cent in total
+  bt <- m[m$quantity == "biomass" & m$stratum == "total", ]
+  expect_true(all(abs(bt$value.si / bt$value.catch - 1) < 0.05))
+  # and within 10 per cent in every stratum
+  bs <- m[m$quantity == "biomass" & m$stratum != "total", ]
+  expect_true(all(abs(bs$value.si / bs$value.catch - 1) < 0.10))
+})
+
+test_that("the bootstrap mean can be reported as the estimate", {
+  skip_if_no_stox()
+  s <- synthetic_root(excluded = c(pelagic = 1))
+  cfg <- quick_config(6L)
+  base <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st1")))
+  cfg$estimate$point <- "bootstrap_mean"
+  mean_ <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st2")))
+  key <- c("species_code", "stratum", "quantity")
+  m <- merge(base$estimates[c(key, "value", "ci_lower", "ci_upper")],
+             mean_$estimates[c(key, "value")], by = key, suffixes = c(".base", ".mean"))
+  expect_false(isTRUE(all.equal(m$value.base, m$value.mean)))
+  # the bootstrap mean is close to the baseline for a large cell
+  big <- m$quantity == "biomass" & m$stratum == "total" & m$species_code == "SYN001"
+  expect_lt(abs(m$value.mean[big] / m$value.base[big] - 1), 0.25)
+})
+
+# ---- Station exclusions ----------------------------------------------------------
+
+test_that("station exclusion lists are read from plain filter clauses only", {
+  expect_equal(parse_station_exclusions("Station %notin% c('a/1-2', 'b-3')"), c("a/1-2", "b-3"))
+  expect_equal(parse_station_exclusions('!Station %in% c("a", "b")'), c("a", "b"))
+  expect_equal(parse_station_exclusions("!(Station %in% c('a','b'))"), c("a", "b"))
+  expect_equal(parse_station_exclusions("Station != 'a' & Station != 'b'"), c("a", "b"))
+  expect_equal(parse_station_exclusions("samplequality == 12 & Station %notin% c('x')"), "x")
+  expect_equal(parse_station_exclusions("Station %notin% c('a & b', 'c | d')"), c("a & b", "c | d"))
+  expect_null(parse_station_exclusions("samplequality == 12 & gear %in% c(1, 2)"))
+  expect_null(parse_station_exclusions("StationKey %notin% c('x')"))   # another field
+  # anything else on the field is refused, without echoing the key
+  for (bad in c("Station == 'SENTINEL_KEY'", "Station %in% c('SENTINEL_KEY')",
+                "Station %notin% SENTINEL_KEY", "Station %notin% c('SENTINEL_KEY', other)",
+                "Station %notin% c('SENTINEL_KEY"))  {
+    err <- tryCatch(parse_station_exclusions(bad), error = function(e) e)
+    expect_s3_class(err, "nansenbiomass_error")
+    expect_match(conditionMessage(err), "SX-EXC-04")
+    expect_false(grepl("SENTINEL_KEY", conditionMessage(err)))
+  }
+})
+
+write_exclusion_project <- function(root, keys, expr = NULL, name = "official") {
+  dir.create(file.path(root, name, "process"), recursive = TRUE)
+  expr <- if (is.null(expr)) paste0("Station %notin% c(", paste0("'", keys, "'", collapse = ", "), ")") else expr
+  jsonlite::write_json(
+    list(project = list(models = list(baseline = list(list(
+      processName = "FilterStoxBiotic", functionName = "RstoxData::FilterStoxBiotic",
+      functionParameters = list(FilterExpression = list(Station = expr))
+    ))))),
+    file.path(root, name, "process", "project.json"), auto_unbox = TRUE
+  )
+}
+
+synthetic_station_keys <- function(root) {
+  sb <- suppressWarnings(RstoxData::StoxBiotic(RstoxData::ReadBiotic(
+    file.path(root, "surveys", "synthetic-seed1.xml"))))
+  sb$Station$Station
+}
+
+test_that("stox_station_exclusions() writes serial numbers and prints counts only", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  keys <- synthetic_station_keys(s$root)
+  write_exclusion_project(s$root, c(keys[1:2], "SENTINEL_KEY"))
+  warned <- NULL
+  res <- withCallingHandlers(
+    stox_station_exclusions("official", "surveys/synthetic-seed1.xml", "exclusions/s.txt", root = s$root),
+    warning = function(w) { warned <<- conditionMessage(w); invokeRestart("muffleWarning") }
+  )
+  expect_match(warned, "LOG-WARN-01")
+  expect_false(grepl("SENTINEL_KEY", warned))
+  expect_s3_class(res, "nb_exclusions")
+  expect_equal(unlist(unclass(res)[c("n_listed", "n_matched", "n_unmatched", "n_serials")],
+                      use.names = FALSE), c(3L, 2L, 1L, 2L))
+  lines <- readLines(file.path(s$root, "exclusions", "s.txt"))
+  expect_equal(lines[-1], c("90001", "90002"))
+  expect_true(startsWith(lines[1], "#"))
+  # neither the keys nor the planted identifier reach the printed object or the log
+  shown <- paste(utils::capture.output(print(res)), collapse = "\n")
+  expect_false(grepl("SENTINEL_KEY|SYNTH0001", shown))
+  logs <- paste(unlist(lapply(list.files(file.path(s$root, "logs"), full.names = TRUE), readLines)),
+                collapse = "\n")
+  expect_false(grepl("SENTINEL_KEY", logs))
+  # refusals
+  expect_error(stox_station_exclusions("official", "surveys/synthetic-seed1.xml", "exclusions/s.txt",
+                                       root = s$root), "SX-EXC-05")
+  write_exclusion_project(s$root, character(0), expr = "samplequality == 12", name = "nolist")
+  expect_error(stox_station_exclusions("nolist", "surveys/synthetic-seed1.xml", "exclusions/n.txt",
+                                       root = s$root), "SX-EXC-07")
+  dir.create(file.path(s$root, "v27", "process"), recursive = TRUE)
+  writeLines(xml_project, file.path(s$root, "v27", "process", "project.xml"))
+  expect_error(stox_station_exclusions("v27", "surveys/synthetic-seed1.xml", "exclusions/x.txt",
+                                       root = s$root), "SX-EXC-06")
+})
+
+test_that("an exclusion file leaves the listed stations out of the counts and of the estimate", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  keys <- synthetic_station_keys(s$root)
+  write_exclusion_project(s$root, keys[1:2])
+  stox_station_exclusions("official", "surveys/synthetic-seed1.xml", "exclusions/s.txt", root = s$root)
+  cfg <- quick_config(3L)
+  cfg$inclusion$exclude_stations_file <- "exclusions/s.txt"
+  inc <- inclusion_summary(cfg, root = s$root)
+  r <- inc$rules
+  expect_equal(r$n_excluded[grepl("^not in the exclusion list", r$rule)], 2L)
+  expect_match(r$rule[grepl("exclusion", r$rule)], "2 listed, 2 in the files")
+  expect_equal(r$n_after[nrow(r)], 43L)
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  expect_equal(sum(res$support$n_stations[res$support$species_code == "SYN001"]), 43L)
+  direct <- direct_biomass(s$sv, "SYN001", exclude = c("90001", "90002"))
+  got <- res$estimates[res$estimates$species_code == "SYN001" & res$estimates$quantity == "biomass" &
+                         res$estimates$stratum != "total", ]
+  expect_equal(got$value, as.numeric(direct[got$stratum]), tolerance = 1e-6)
+  # the identifiers are not in the staged files
+  est_file <- res$staged$files[grepl("estimates\\.csv$", res$staged$files)]
+  expect_length(est_file, 1L)
+  expect_false(grepl("serial|exclu", paste(readLines(est_file), collapse = "\n"), ignore.case = TRUE))
+})
+
+test_that("a bad exclusion file or path is refused without echoing its content", {
+  s <- synthetic_root()
+  dir.create(file.path(s$root, "exclusions"))
+  writeLines(c("# comment", "12345", "SENTINEL KEY WITH SPACES"), file.path(s$root, "exclusions", "bad.txt"))
+  cfg <- quick_config(3L)
+  cfg$inclusion$exclude_stations_file <- "exclusions/bad.txt"
+  err <- tryCatch(inclusion_summary(cfg, root = s$root), error = function(e) e)
+  expect_match(conditionMessage(err), "SX-EXC-02")
+  expect_false(grepl("SENTINEL", conditionMessage(err)))
+  x <- yaml::read_yaml(example_config())
+  x$inclusion$exclude_stations_file <- "C:/data/exclusions.txt"
+  expect_error(validate_config(x), "CF-PATH-02")
+  x$inclusion$exclude_stations_file <- "../exclusions.txt"
+  expect_error(validate_config(x), "CF-PATH-02")
+  cfg$inclusion$exclude_stations_file <- "exclusions/missing.txt"
+  expect_error(inclusion_summary(cfg, root = s$root), "IO-PATH-03|SX-INC-01")
 })

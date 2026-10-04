@@ -14,7 +14,7 @@ test_that("the synthetic example reads, validates and is hashed", {
   expect_equal(cfg$inclusion$samplequality, "12")
   expect_equal(cfg$inclusion$gearcondition, c("1", "2"))
   expect_true(cfg$inclusion$positive_distance)
-  expect_equal(cfg$bootstrap, list(replicates = 50L, seed = 1L))
+  expect_equal(cfg$bootstrap, list(replicates = 50L, seed = 1L, impute_seed = 1L))
   expect_equal(cfg$catch$raising_factor_priority, "Weight")
   expect_equal(cfg$disclosure, list(min_stations = 5L, min_positive = 3L))
   expect_equal(attr(cfg, "config_hash"), unname(tools::md5sum(example)))
@@ -86,4 +86,47 @@ test_that("missing or unreadable files fail by code", {
   cnd <- expect_error(read_config(f), class = "nansenbiomass_error")
   expect_equal(cnd$nb_code, "CF-READ-02")
   expect_false(grepl(sentinel, conditionMessage(cnd)))
+})
+
+test_that("the biomass route, lengths and estimate blocks are validated", {
+  raw <- function() yaml::read_yaml(system.file("configs", "synthetic-example.yml", package = "nansenbiomass"))
+  cfg <- validate_config(raw())
+  expect_equal(cfg$biomass$method, "total_catch")
+  expect_true(is.na(cfg$lengths$interval_cm))
+  expect_equal(cfg$estimate$point, "baseline")
+  x <- raw()
+  x$biomass <- list(method = "super_individuals", distribution_method = "HaulDensity",
+                    imputation = list(levels = c("Haul", "Survey"), seed = 5,
+                                      at_missing = "IndividualRoundWeight",
+                                      to_impute = c("IndividualRoundWeight", "IndividualAge")))
+  x$lengths <- list(interval_cm = 2)
+  x$bootstrap$impute_seed <- 5
+  x$estimate <- list(point = "bootstrap_mean")
+  cfg <- validate_config(x)
+  expect_equal(cfg$biomass$method, "super_individuals")
+  expect_equal(cfg$biomass$imputation$levels, c("Haul", "Survey"))
+  expect_equal(cfg$biomass$imputation$to_impute, c("IndividualRoundWeight", "IndividualAge"))
+  expect_equal(cfg$lengths$interval_cm, 2)
+  expect_equal(cfg$bootstrap$impute_seed, 5L)
+  expect_equal(cfg$estimate$point, "bootstrap_mean")
+  bad <- function(f) { y <- raw(); f(y) }
+  expect_error(validate_config(bad(function(y) { y$biomass$method <- "mass"; y })), "CF-VAL-01")
+  expect_error(validate_config(bad(function(y) { y$biomass$distribution_method <- "x"; y })), "CF-VAL-01")
+  expect_error(validate_config(bad(function(y) { y$biomass$imputation$method <- "Regression"; y })), "CF-VAL-01")
+  expect_error(validate_config(bad(function(y) { y$biomass$imputation$levels <- "Boat"; y })), "CF-VAL-01")
+  expect_error(validate_config(bad(function(y) { y$biomass$imputation$to_impute <- "a b"; y })), "CF-TYPE-02")
+  expect_error(validate_config(bad(function(y) { y$biomass$imputation$at_missing <- c("a", "b"); y })), "CF-TYPE-02")
+  expect_error(validate_config(bad(function(y) { y$lengths$interval_cm <- 0; y })), "CF-VAL-02")
+  expect_error(validate_config(bad(function(y) { y$estimate$point <- "median"; y })), "CF-VAL-01")
+  expect_error(validate_config(bad(function(y) { y$bootstrap$impute_seed <- "a"; y })), "CF-VAL-02")
+})
+
+test_that("validating a validated configuration changes nothing", {
+  raw <- yaml::read_yaml(system.file("configs", "synthetic-example.yml", package = "nansenbiomass"))
+  once <- validate_config(raw)
+  expect_equal(validate_config(once), once)
+  raw$lengths <- list(interval_cm = 2)
+  raw$biomass <- list(method = "super_individuals")
+  once <- validate_config(raw)
+  expect_equal(validate_config(once), once)
 })
