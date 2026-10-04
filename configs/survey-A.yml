@@ -11,6 +11,10 @@ data:
   strata: strata/NWA_DEM_south.wkt        # StoX WKT stratum file, 48 strata
   stratum_label: stratum                  # as StratumNameLabel in the project
   # stratum_names: left out; the 48 names are read from the strata file
+  # The strata to estimate are those of the regions in which stations were kept (the surveyed
+  # EEZ(s)): every depth band of such a region is selected, sampled or not (an unsampled band
+  # gets an NA estimate). Check the strata and counts with inclusion_summary() before a run.
+  stratum_regions: "^(.*)_[0-9]+-[0-9]+m$"
 inclusion:
   # Haul filter of the project: Gear %in% c("3032", "3033") & gearcondition %in% "1" & samplequality %in% "12"
   gear: ["3032", "3033"]
