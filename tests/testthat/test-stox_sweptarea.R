@@ -811,3 +811,86 @@ test_that("a bad exclusion file or path is refused without echoing its content",
   cfg$inclusion$exclude_stations_file <- "exclusions/missing.txt"
   expect_error(inclusion_summary(cfg, root = s$root), "IO-PATH-03|SX-INC-01")
 })
+
+# ---- Official project copy run and comparison -----------------------------------
+
+test_that("StoX report tables are converted to a comparable table", {
+  reports <- list(
+    base_stratum = data.frame(Stratum = c("A", "B"), SpeciesCategory = "n/SP1/NA/s",
+                              Biomass_sum = c(2e6, 3e6)),
+    boot_total = data.frame(Survey = c("Survey", NA), SpeciesCategory = "n/SP1/NA/s",
+                            Abundance_sum_mean = c(5e6, 9e6), Abundance_sum_sd = c(5e5, 1e5),
+                            Abundance_sum_cv = c(0.1, 0.01), `Abundance_sum_2.5%` = c(4e6, 1e6),
+                            `Abundance_sum_97.5%` = c(6e6, 2e6), check.names = FALSE),
+    by_length = data.frame(Stratum = "A", IndividualTotalLength = 10, Abundance_sum = 1e6),
+    not_a_report = data.frame(x = 1)
+  )
+  tab <- official_reports_to_table(reports)
+  expect_setequal(tab$process, c("base_stratum", "boot_total"))      # the length report is skipped
+  b <- tab[tab$process == "base_stratum", ]
+  expect_equal(b$kind, c("baseline", "baseline"))
+  expect_equal(b$baseline, c(2, 3))                                  # grams to tonnes
+  expect_equal(b$quantity, c("biomass", "biomass"))
+  t <- tab[tab$process == "boot_total", ]
+  expect_equal(nrow(t), 1L)                                          # the row outside the survey is dropped
+  expect_equal(t$stratum, "total")
+  expect_equal(t$kind, "bootstrap")
+  expect_equal(c(t$mean, t$sd, t$cv, t$lower, t$upper), c(5, 0.5, 0.1, 4, 6))   # millions; the CV is not scaled
+  expect_equal(official_reports_to_table(reports, scale = c(biomass = 1, abundance = 1))$baseline[1], 2e6)
+})
+
+test_that("compare_estimates() reports ratios, flags, and refuses empty comparisons", {
+  ours <- tibble::tibble(species_code = c("SP1", "SP1", "SP2"), stratum = c("A", "total", "A"),
+                         quantity = "biomass", value = c(2.01, 5.5, 1), cv = c(0.2, 0.1, 0.3))
+  ref <- official_reports_to_table(list(
+    base = data.frame(Stratum = c("A", "A"), SpeciesCategory = c("n/SP1/NA/s", "n/SP2/NA/s"),
+                      Biomass_sum = c(2e6, 1e6)),
+    tot = data.frame(Survey = "Survey", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 5e6)
+  ))
+  cmp <- compare_estimates(ours, ref)
+  expect_s3_class(cmp, "nb_comparison")
+  expect_equal(nrow(cmp), 3L)
+  expect_equal(cmp$ratio[cmp$stratum == "A" & cmp$species_code == "SP1"], 1.005)
+  expect_equal(cmp$within[cmp$stratum == "A" & cmp$species_code == "SP1"], TRUE)
+  expect_equal(cmp$within[cmp$stratum == "total"], FALSE)            # 5.5 against 5 is outside 1%
+  expect_equal(cmp$ratio[cmp$species_code == "SP2"], 1)
+  expect_true(all(is.na(cmp$cv_ratio)))                              # the reference has no CV
+  expect_output(print(cmp), "3 compared, 2 within tolerance")
+  expect_equal(compare_estimates(ours, ref, tolerance = 0.2)$within, rep(TRUE, 3))
+  expect_error(compare_estimates(ours, ref, "mean"), "SX-CMP-01")    # no bootstrap values
+  other <- ref; other$stratum <- "Z"
+  expect_error(compare_estimates(ours, other), "SX-CMP-02")
+})
+
+test_that("a copy of a project reproduces our estimates and the original is left untouched", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  cfg <- quick_config(3L)
+  cfg$biomass$method <- "super_individuals"
+  cfg$lengths$interval_cm <- 2
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  rel <- sub(paste0("^", normalizePath(s$root, winslash = "/"), "/"), "",
+             normalizePath(res$project_path, winslash = "/"))
+  files <- list.files(res$project_path, recursive = TRUE, full.names = TRUE)
+  before <- tools::md5sum(files[!grepl("/output/", files)])
+  run <- suppressWarnings(stox_official_copy_run(rel, root = s$root, replicates = 3L))
+  expect_s3_class(run, "nb_official_run")
+  # the original project is unchanged, the copy is a separate folder in the data zone
+  after <- tools::md5sum(files[!grepl("/output/", files)])
+  expect_equal(unname(after), unname(before))
+  expect_true(dir.exists(file.path(s$root, run$folder)))
+  expect_true(startsWith(run$folder, "stox_official_check/copy-"))
+  expect_true(length(run$reports) >= 4L)
+  expect_false(is.null(run$reference))
+  # same engine and same input: the baseline values are ours
+  cmp <- compare_estimates(res$estimates, official_reports_to_table(run$reports), "baseline")
+  expect_equal(nrow(cmp), nrow(res$estimates))
+  expect_equal(cmp$ratio, rep(1, nrow(cmp)), tolerance = 1e-9)
+  # nothing but names and counts is printed
+  shown <- paste(utils::capture.output(print(run)), collapse = "\n")
+  expect_match(shown, "rows")
+  expect_false(grepl("SYNTH0001|SYN001|SYN-A|/tmp|Rtmp", shown))
+  # refusals
+  expect_error(stox_official_copy_run("surveys/synthetic-seed1.xml", root = s$root), "SX-OFF-02")
+  expect_error(stox_official_copy_run(rel, root = s$root, replicates = 0), "SX-OFF-03")
+})
