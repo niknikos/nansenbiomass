@@ -894,3 +894,20 @@ test_that("a copy of a project reproduces our estimates and the original is left
   expect_error(stox_official_copy_run("surveys/synthetic-seed1.xml", root = s$root), "SX-OFF-02")
   expect_error(stox_official_copy_run(rel, root = s$root, replicates = 0), "SX-OFF-03")
 })
+
+test_that("the StoX packages are attached before use, also after a session detached them", {
+  skip_if_no_stox()
+  for (p in c("RstoxFramework", "RstoxData", "RstoxBase")) {
+    nm <- paste0("package:", p)
+    if (nm %in% search()) detach(nm, character.only = TRUE)
+  }
+  expect_false("package:RstoxBase" %in% search())
+  check_stox_ready(list(stox = list(version = stox_pinned_version)))
+  expect_true(all(paste0("package:", c("RstoxBase", "RstoxData", "RstoxFramework")) %in% search()))
+  # and a run works straight after a detach
+  for (p in c("RstoxFramework", "RstoxData", "RstoxBase")) detach(paste0("package:", p), character.only = TRUE)
+  s <- synthetic_root(excluded = c(pelagic = 1))
+  res <- suppressWarnings(run_estimate(quick_config(2L), root = s$root,
+                                       staging_dir = file.path(s$root, "st")))
+  expect_gt(nrow(res$estimates), 0L)   # whether the export passes the airlock is a separate question
+})

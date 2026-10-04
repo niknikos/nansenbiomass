@@ -71,6 +71,18 @@ stox_versions <- function() {
   }, character(1))
 }
 
+# RstoxFramework finds some of RstoxBase's functions on the search path, and
+# attaches the StoX packages itself the first time it runs; it does not do so
+# again if a session has detached them since (as the example runner of R CMD
+# check does between examples). Attaching them before every use, in StoX's own
+# order, makes a run independent of that.
+stox_attach <- function() {
+  for (p in c("RstoxBase", "RstoxData", "RstoxFramework")) {
+    if (!paste0("package:", p) %in% search()) suppressMessages(attachNamespace(p))
+  }
+  invisible(TRUE)
+}
+
 # The StoX packages must be installed at the pinned release, and the
 # configuration must ask for that release. Errors name packages and versions
 # only, never data.
@@ -84,6 +96,7 @@ check_stox_ready <- function(cfg) {
     nb_abort("SX-STOX-02", paste0("The configuration asks for RstoxFramework ", cfg$stox$version,
                                   " but ", v[["RstoxFramework"]], " is installed."))
   }
+  stox_attach()
   invisible(v)
 }
 
