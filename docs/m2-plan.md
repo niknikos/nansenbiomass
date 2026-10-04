@@ -285,6 +285,35 @@ reviewed `stox_key_settings()` output (structure only; no paths or identifiers w
 - The output was produced by a build before the filter change of the same day, so the filter
   clauses were still withheld.
 
+**Phase 3b spike (4 October 2026, cloud, synthetic data).** Findings for the super-individual
+biomass route and the official-project plan:
+
+- The chain `Quantity` (abundance) → `Individuals` → `SuperIndividuals` → `ImputeSuperIndividuals`
+  runs headless in RstoxFramework 4.2.1, with a bootstrap that resamples the mean length
+  distribution and a `BaselineSeedTable` for the imputation seed, and reports from
+  `ReportSuperIndividuals` and `ReportBootstrap` (columns `<Q>_sum`, `_mean`, `_sd`, `_cv` and
+  the percentiles). `ImputeSuperIndividuals` needs explicit `ImputeAtMissing` (one value),
+  `ToImpute`, `ImputeByEqual`, `ImputationLevels` and `Seed`; the official values are still to be
+  read from the project.
+- Units: the super-individual `Biomass` is in grams (abundance times individual weight in
+  grams), so tonnes are the sum divided by 1e6; the catch-weight route is in kg (divide by 1e3).
+- On the synthetic survey the baseline biomass by super-individuals is within 1% of the
+  catch-weight route in total (16,049 against 16,158 t) and within 2.4% by stratum; both routes
+  share the same stations. Totals by `Survey` work as in the catch-weight route.
+- Cost: about 2.6 s per bootstrap replicate on one core for a 45-station synthetic survey (4,732
+  super-individuals, 3.5 MB), 1.6 s with two cores; the baseline takes 5.5 s. A real survey is
+  larger, so 1000 replicates will take from tens of minutes to hours; to be measured.
+- The StoX station key (`Station`) maps one to one to `serialnumber` through the `Haul` table
+  (`HaulKey`), and a `Station %notin% c(...)` filter removes exactly the listed stations.
+- A species filter on `SpeciesCategory` must use `FilterUpwards = FALSE`, as the official project
+  does; with `TRUE` it removes the hauls where the species was absent and biases the abundance
+  upward (21 of 45 hauls kept in the test, against 45).
+- The StoX 3.4 stack cannot be built in the cloud: it depends on `rgdal`, `rgeos` and `xslt`,
+  which no longer exist for current R. The StoX repository has Windows binaries of 3.4 only for
+  R 4.1. A side-by-side 3.4 run is therefore not planned. Instead, RstoxFramework 4.2.1 has
+  backward-compatibility actions and can open and run a copy of a 3.4 project, and the project's
+  own saved output files (from the 3.4 run) serve as the reference.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
