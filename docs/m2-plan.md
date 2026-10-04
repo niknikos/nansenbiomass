@@ -11,7 +11,7 @@ this file, then continue from **Next step** below.
 | Phase 0. Environment and dependencies | Done (4 October 2026): `nansenbiomass-m1` built from the current `cloud/setup.sh`; StoX 4.2 installed as pinned; `R CMD check` Status: OK with 321 tests, in a fresh session there |
 | Phase 1. Official setup (structure script) | `describe_stox_project()` ready (StoX 2.7 `project.xml` and StoX 3+ `project.json`); waiting for the laptop run on the official projects |
 | Phase 2. Configuration and entry point | Done except `run_estimate()`, moved to Phase 3 where it can run StoX: `read_config()`, `validate_config()`, `config_hash()`, `inclusion_summary()`; synthetic excluded stations (brought forward from Phase 5); example in `inst/configs/synthetic-example.yml` |
-| Phase 3. StoX template and runner | Not started |
+| Phase 3. StoX template and runner | Spike done (4 October 2026; findings below); package code waits for three decisions (see "Phase 3 spike") |
 | Phase 4. Outputs and the airlock | Not started |
 | Phase 5. Synthetic tests | Not started |
 | Phase 6. Reproduction on the laptop (D-11) | Not started |
@@ -100,8 +100,80 @@ include the stages the current script writes and the pinned versions are install
 - "Log" in this plan means the vessel's log counter (`logstart`, `logstop`), except where it
   says setup logs or local logs.
 
-**Next step.** Phase 3, in a new session in `nansenbiomass-m1`. The project lead runs `describe_stox_project()` on the official projects
-and shares the reviewed output.
+**Phase 3 spike (4 October 2026).** A throw-away script, run on one synthetic survey (seed 1,
+with excluded stations) against the installed RstoxFramework 4.2.1, RstoxBase 2.2.1 and
+RstoxData 2.2.1, built the whole chain through `createProject()` and `addProcess()` and ran
+it, with a 20-replicate bootstrap and a bootstrap report. Nothing from it is committed; the
+findings are these.
+
+*What works.*
+
+- RstoxData reads the files that `write_biotic()` writes. `HaulKey` is the station's
+  `serialnumber`, so a filter on `HaulKey` can select exactly the stations that
+  `inclusion_summary()` keeps.
+- The chain that ran: `ReadBiotic`, `StoxBiotic`, `FilterStoxBiotic`, `DefineStratumPolygon`
+  (resource file), `DefineSurvey`, `DefineBioticPSU` (`StationToPSU`, one PSU per station),
+  `DefineBioticLayer`, `LengthDistribution`, `SpeciesCategoryCatch`, `SumLengthDistribution`,
+  `SumSpeciesCategoryCatch`, `MeanLengthDistribution`, `MeanSpeciesCategoryCatch`, two
+  `SweptAreaDensity` processes, two `MeanDensity`, `StratumArea`, two `Quantity`;
+  analysis `Bootstrap`; report `ReportBootstrap`.
+- Biomass comes from `SpeciesCategoryCatch` with `SweptAreaDensity(TotalCatch,
+  AreaWeightDensity)`; abundance from `LengthDistribution` with
+  `SweptAreaDensity(LengthDistributed, AreaNumberDensity)`. Two baseline branches, both
+  bootstrapped (`ResampleMeanLengthDistributionData` and
+  `ResampleMeanSpeciesCategoryCatchData`, resampling PSUs by stratum).
+- `ReportBootstrap` gives, per stratum and species category, the mean, SD and the 2.5% and
+  97.5% percentiles. A species category reads `name/code/NA/latin`; the code is the second
+  element.
+
+*What the code must handle.*
+
+- `addProcess()` does not link inputs: every process needs its `functionInputs` named.
+  Some parameters have no usable default (`RaisingFactorPriority`, `DensityType`,
+  `SweepWidth`).
+- `FilterStoxBiotic` removes hauls but leaves their stations; without `FilterUpwards = TRUE`
+  the PSU definition creates PSUs for excluded stations (52 instead of 40 in the test).
+- StoxBiotic's `Haul` table carries no `samplequality`, `gearcondition` or `stationtype`.
+  A filter on those fields would have to act earlier (`FilterBiotic`), which is why the
+  station key list from the shared inclusion function is the safer route.
+- The synthetic generator leaves `catchproducttype`, `sampleproducttype`,
+  `individualproducttype`, `lengthmeasurement` and `lengthresolution` empty. StoX then sets
+  catch weight, sample weight, individual weight and length to missing, and abundance comes
+  out as `NA`. The generator must write the codes the real archive uses (product types 1,
+  length measurement E, length resolution 1 for 1 mm). This changes synthetic files, so the
+  M1 tests that mention these fields need a look.
+- `DefineSurvey` with a table of three strata does not remove the fourth from `Quantity`.
+  A total that respects `includeintotal` has to come from a stratum filter in the report
+  (or from our own sum), not from the survey definition.
+- The point estimate should come from the baseline output; the bootstrap mean differs from
+  it. D-11 compares point estimates, so the Section 9 `value` is the baseline figure and
+  the CV comes from the bootstrap SD.
+- Bootstrap copies the project into one folder per core inside the project folder (data
+  zone); this is expected.
+
+*What contradicts the brief.*
+
+- **Swept width by door spread.** In StoX 4.2.1, `SweptAreaDensity` accepts only a constant
+  sweep width for ordinary data; `SweepWidthMethod = PreDefined` is allowed only for data
+  that are already sweep-width compensated by length. A haul-specific door spread therefore
+  cannot be passed through. The configuration option `swept_width.method: trawldoorspread`
+  cannot be honoured by a plain `SweptAreaDensity`. Options, for the project lead to decide
+  once the official summaries show what the official runs do: (a) support `fixed` only in
+  M2 and refuse `trawldoorspread` with a clear message; (b) fold the haul's door spread into
+  the effective tow distance through a translation, so that the density equals count over
+  distance times that haul's spread; mathematically equivalent, but it alters the meaning of
+  a StoX variable and has to be documented in every run's metadata; (c) use StoX's
+  length-dependent sweep-width compensation, which is a different method.
+- **Per-haul translation.** A first attempt at translating one haul's `EffectiveTowDistance`
+  with `TranslateStoxBiotic` (conditional on `HaulKey`) changed the wrong column. The table
+  layout for conditional translations needs one more iteration against the documentation
+  before distance recovery (and option (b)) can be relied on.
+
+**Next step.** Phase 3, in a new session in `nansenbiomass-m1`, once the project lead has
+decided the three points above (inclusion filter by station keys; biomass and abundance as
+two branches; how to treat door spread). The project lead runs `describe_stox_project()` on
+the official projects and shares the reviewed output; it settles the swept-width question
+and the catch-handling settings.
 
 **Zero distances and strata (4 October 2026, project lead).** Stations with a zero or
 missing towed distance are always flagged by `inclusion_summary()`, with the number whose
