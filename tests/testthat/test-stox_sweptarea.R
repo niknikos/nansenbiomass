@@ -1056,7 +1056,7 @@ test_that("super-individual reports leave out individuals without a weight, as t
 
 test_that("a StoX WKT stratum file is read like a polygon file", {
   s <- synthetic_root()
-  wkt <- sf::st_as_text(sf::st_geometry(sf::st_transform(s$sv$strata, 4326)))
+  wkt <- sf::st_as_text(sf::st_geometry(sf::st_transform(s$sv$strata, 4326)), digits = 15)
   writeLines(paste0(s$sv$strata$stratum, "\t", wkt), file.path(s$root, "strata", "synthetic.wkt"))
   d <- stox_strata("strata/synthetic.wkt", root = s$root, out = "strata/from-wkt.geojson")
   expect_equal(d$source, "a StoX stratum WKT file")
@@ -1140,7 +1140,7 @@ test_that("a selection that cannot be applied is refused", {
   expect_error(inclusion_summary(y, root = s$root), "SX-STRATA-03|SX-INC-01")
   raw <- yaml::read_yaml(example_config())
   raw$data$stratum_pattern <- "([unbalanced"
-  expect_error(validate_config(raw), "CF-VAL-01")
+  expect_error(suppressWarnings(validate_config(raw)), "CF-VAL-01")
   raw$data$stratum_pattern <- NULL
   raw$data$stratum_pattern <- c("a", "b")
   expect_error(validate_config(raw), "CF-VAL-01")
@@ -1149,7 +1149,7 @@ test_that("a selection that cannot be applied is refused", {
 test_that("a run estimates the selected strata only, from a WKT strata file", {
   skip_if_no_stox()
   s <- synthetic_root()
-  wkt <- sf::st_as_text(sf::st_geometry(sf::st_transform(s$sv$strata, 4326)))
+  wkt <- sf::st_as_text(sf::st_geometry(sf::st_transform(s$sv$strata, 4326)), digits = 15)
   writeLines(paste0(s$sv$strata$stratum, "\t", wkt), file.path(s$root, "strata", "synthetic.wkt"))
   cfg <- quick_config(2L)
   cfg$data$strata <- "strata/synthetic.wkt"
