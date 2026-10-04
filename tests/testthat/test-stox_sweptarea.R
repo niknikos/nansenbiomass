@@ -837,6 +837,10 @@ test_that("StoX report tables are converted to a comparable table", {
   expect_equal(t$kind, "bootstrap")
   expect_equal(c(t$mean, t$sd, t$cv, t$lower, t$upper), c(5, 0.5, 0.1, 4, 6))   # millions; the CV is not scaled
   expect_equal(official_reports_to_table(reports, scale = c(biomass = 1, abundance = 1))$baseline[1], 2e6)
+  # an empty row (a stratum without a catch of the species) is dropped
+  empty <- list(r = data.frame(Stratum = c("A", "C"), SpeciesCategory = c("n/SP1/NA/s", NA),
+                               Biomass_sum = c(2e6, NA)))
+  expect_equal(official_reports_to_table(empty)$stratum, "A")
 })
 
 test_that("compare_estimates() reports ratios, flags, and refuses empty comparisons", {

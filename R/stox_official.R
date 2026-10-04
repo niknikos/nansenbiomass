@@ -297,7 +297,9 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
         out[[st]] <- as.numeric(df[[hit]]) * (if (st == "cv") 1 else scale[[quantity]])
       }
     }
-    out
+    # a stratum where the species was not caught comes with an empty row: no information
+    has_value <- rowSums(!is.na(out[intersect(names(stats), names(out))])) > 0L
+    out[has_value, , drop = FALSE]
   })
   tibble::as_tibble(dplyr::bind_rows(rows))
 }
