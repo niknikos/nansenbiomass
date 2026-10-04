@@ -95,9 +95,14 @@ validate_config <- function(cfg) {
   # the polygon file are used
   strata <- cfg$data$stratum_names
   if (!is.null(strata)) {
-    if (!is.atomic(strata) || length(strata) == 0L || anyNA(strata) ||
-        any(as.character(strata) == "total") || anyDuplicated(strata)) {
-      cf_abort("CF-TYPE-02", "data.stratum_names", "must list unique stratum names (not `total`)")
+    why <- if (length(strata) == 0L) "is empty (leave the field out instead)" else
+      if (!is.atomic(strata)) "is not a plain list of names" else
+      if (anyNA(strata)) "has a missing entry" else
+      if (any(as.character(strata) == "total")) "contains `total`" else
+      if (anyDuplicated(strata)) "has a name more than once" else NULL
+    if (!is.null(why)) {
+      cf_abort("CF-TYPE-02", "data.stratum_names",
+               paste0("must list unique stratum names (not `total`); it ", why))
     }
     cfg$data$stratum_names <- as.character(strata)
   }
