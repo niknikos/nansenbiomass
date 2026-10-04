@@ -1,0 +1,51 @@
+# Reproduction of the first official project ("real survey A").
+# Written from the official project.json (StoX 3.4) by Claude on 4 October 2026; every value below
+# is the project's own unless marked "to confirm". Paths are relative to NANSEN_DATA_ROOT; the
+# files named here are in the data zone, not in the repository.
+survey:
+  label: SURVEY-A            # to confirm: the survey identifier that should appear in released tables
+  year: 2022                 # to confirm: survey year
+data:
+  biotic:
+    - surveys/survey-A-project-copy.xml   # the project's own copy of the biotic file
+  strata: strata/NWA_DEM_south.wkt        # StoX WKT stratum file, 48 strata
+  stratum_label: stratum                  # as StratumNameLabel in the project
+  # stratum_names: left out; the 48 names are read from the strata file
+inclusion:
+  # Haul filter of the project: Gear %in% c("3032", "3033") & gearcondition %in% "1" & samplequality %in% "12"
+  gear: ["3032", "3033"]
+  gearcondition: ["1"]
+  samplequality: ["12"]
+  positive_distance: true
+  distance_recovery: none
+  # Station filter of the project: Station %notin% c(<2 stations>); built with stox_station_exclusions()
+  exclude_stations_file: exclusions/survey-A.txt
+swept_width:
+  method: fixed
+  fixed_m: 18.5
+species: ["550664"]          # species filter of the project: catch category 550664
+quantities: [biomass, abundance]
+catch:
+  raising_factor_priority: Weight
+lengths:
+  interval_cm: 2             # RegroupLengthDistribution
+biomass:
+  method: super_individuals
+  distribution_method: HaulDensity
+  imputation:
+    method: RandomSampling
+    at_missing: IndividualTotalLength
+    to_impute: IndividualTotalLength
+    by_equal: LengthResolution
+    seed: 1
+bootstrap:
+  replicates: 100            # the project used 1000; 100 for the first comparison, use the same number in the copy run
+  seed: 1
+  impute_seed: 5             # BaselineSeedTable of the project
+estimate:
+  point: bootstrap_mean      # to confirm: published figures are bootstrap means (the project's reports are)
+stox:
+  version: 4.2.1
+disclosure:
+  min_stations: 5
+  min_positive: 3

@@ -389,6 +389,18 @@ files and stratum files are class C3 and may be shared with the AI (recorded in 
 Section 3.1 and D-02). They are read directly when attached, which replaces the review rounds on
 `describe_stox_project()` output for those files. Survey data and station-level outputs remain excluded.
 
+**First official project, read directly (4 October 2026).** The attached `project.json` and stratum file
+(C3 under the new decision) gave: 48 strata (six depth bands in each of eight regions) in a StoX WKT file
+(name, tab, polygon; 48 valid polygons, 61 to 6,412 km2), a single biotic file, the haul filter
+`Gear %in% c("3032","3033") & gearcondition %in% "1" & samplequality %in% "12"`, an exclusion list of two
+stations, a species filter on one catch category, and the settings already recorded. Consequences built
+in the package: StoX WKT strata files are read (configuration and `stox_strata()`); `inclusion.gear` is a
+rule; stations are assigned to strata with planar geometry as StoX does (s2 off; first polygon wins; stations
+outside every stratum are unassigned); filter clauses with a bare value (`%in% "1"`) are displayed; and when
+the full export fails the airlock (with 48 strata most have fewer than 5 stations) the totals are staged on
+their own (`staged_total_only`), which reveals no stratum. `configs/survey-A.yml` is the configuration
+written from the project file; the survey label, the year and the point estimate are marked "to confirm".
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
