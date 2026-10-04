@@ -236,6 +236,13 @@ project lead.
   On real files the count check (`SX-INC-03`) is what guards this assumption; it has not yet
   been exercised on real data.
 - The 2.7 `includeintotal` flag was tested with a synthetic `project.xml`, not an official one.
+- StoX does not use the file's `raisingfactor` field (4 October 2026, synthetic test): setting it
+  to 3 on every catch sample gave identical estimates. StoX raises from the catch weight and the
+  length-sample weight (and counts) in the file. Reproducing official StoX figures therefore does
+  not depend on how `raisingfactor` was filled, but whether `catchweight` holds the raised catch
+  or the subsample weight (M1 agenda, item 3) still matters for the sdmTMB module (M3), which
+  uses catch weight per haul. Surveys of the project lead's archive all carry varying raising
+  factors, so raising cannot be used to choose the first survey.
 - Catch parts, raising factors and missing catch weights follow StoX's defaults
   (`RaisingFactorPriority = Weight`), not yet the official projects' settings.
 
