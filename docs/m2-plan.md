@@ -236,6 +236,14 @@ in the cloud. No test was skipped, so the three StoX packages (RstoxFramework 4.
 against 1.2.4 in the lockfile is informational, and the lockfile is still to be tidied by the
 project lead.
 
+**`stox_key_settings()` (4 October 2026).** Added so that the project lead can read the settings
+that decide a reproduction from an official project in one call: sweep width and density method,
+compensation processes, the fields used by filters, bootstrap, raising and length distribution,
+PSU, stratum, survey and layer definitions, and translations, with the items that are absent
+listed. It works on the output of `describe_stox_project()`, so it withholds the same things.
+The 2.7 function and parameter names it matches on have not been verified against a real 2.7
+project. Tests: 387 pass in the cloud; `R CMD check` Status: OK.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

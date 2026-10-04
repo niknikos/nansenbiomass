@@ -472,3 +472,75 @@ test_that("the bootstrap does not depend on the number of cores", {
   cols <- c("species_code", "stratum", "quantity", "value", "cv", "ci_lower", "ci_upper")
   expect_equal(one[cols], two[cols])
 })
+
+# ---- stox_key_settings() --------------------------------------------------------
+
+key_project <- function(sentinel) {
+  fp <- function(...) list(...)
+  proc <- function(name, fun, params = list(), inputs = setNames(list(), character(0)), data = list()) {
+    list(processName = name, functionName = fun, functionInputs = inputs,
+         functionParameters = params, processParameters = list(enabled = TRUE), processData = data)
+  }
+  list(project = list(
+    RstoxPackageVersion = list("RstoxFramework_4.2.1"),
+    models = list(
+      baseline = list(
+        proc("TranslateBiotic", "RstoxData::TranslateBiotic",
+             list(VariableName = "catchcategory", Note = paste("free text", sentinel))),
+        proc("FilterStoxBiotic", "RstoxData::FilterStoxBiotic",
+             list(FilterExpression = list(Haul = paste0("HaulQuality == 12 & HaulKey != '", sentinel, "'")))),
+        proc("BioticPSU", "RstoxBase::DefineBioticPSU", list(DefinitionMethod = "StationToPSU"),
+             data = list(BioticPSU = list(list(Stratum = "S1", PSU = "P1", Haul = sentinel)))),
+        proc("LengthDistribution", "RstoxBase::LengthDistribution",
+             list(LengthDistributionType = "Normalized", RaisingFactorPriority = "Weight")),
+        proc("AbundanceDensity", "RstoxBase::SweptAreaDensity",
+             list(SweptAreaDensityMethod = "LengthDistributed", SweepWidthMethod = "Constant",
+                  SweepWidth = 18.5, DensityType = "AreaNumberDensity"))
+      ),
+      analysis = list(
+        proc("Bootstrap", "RstoxFramework::Bootstrap",
+             list(NumberOfBootstraps = 500, BootstrapMethodTable = list(
+               list(ProcessName = "MeanLengthDistribution",
+                    ResampleFunction = "ResampleMeanLengthDistributionData", Seed = 1234))))
+      )
+    )
+  ))
+}
+
+test_that("stox_key_settings() picks out the settings and withholds the rest", {
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "official", "process"), recursive = TRUE)
+  jsonlite::write_json(key_project(sentinel), file.path(root, "official", "process", "project.json"),
+                       auto_unbox = TRUE, pretty = TRUE)
+  k <- stox_key_settings("official", root = root)
+  expect_s3_class(k, "nb_stox_settings")
+  s <- k$settings
+  val <- function(item, par) s$value[s$item == item & s$parameter == par]
+  expect_equal(val("sweep width and density", "SweepWidthMethod"), "Constant")
+  expect_equal(val("sweep width and density", "SweepWidth"), "18.5")
+  expect_equal(val("raising and length distribution", "RaisingFactorPriority"), "Weight")
+  expect_true(any(s$item == "bootstrap" & s$parameter == "NumberOfBootstraps" & s$value == "500"))
+  expect_true(any(s$item == "bootstrap" & grepl("Seed", s$parameter) & s$value == "1234"))
+  expect_true(any(s$item == "filters (fields only)" & grepl("HaulQuality", s$fields)))
+  expect_true(any(s$item == "translations"))
+  expect_equal(k$not_found, character(0))
+  expect_equal(k$chain$process[k$chain$model == "baseline"][1], "TranslateBiotic")
+  # nothing withheld by describe_stox_project() comes back
+  txt <- paste(c(utils::capture.output(print(k)), unlist(k$settings), unlist(k$process_data)),
+               collapse = "\n")
+  expect_false(grepl(sentinel, txt, fixed = TRUE))
+  expect_false(grepl("HaulQuality == 12", txt, fixed = TRUE))
+  expect_match(txt, "withheld")
+  # the same result from a description
+  expect_equal(stox_key_settings(describe_stox_project("official", root = root))$settings, s)
+})
+
+test_that("stox_key_settings() reports the items a project does not contain", {
+  root <- withr::local_tempdir()
+  write_project(root, "xml")
+  k <- stox_key_settings("official", root = root)
+  expect_true("translations" %in% k$not_found)
+  expect_true("sweep width and density" %in% setdiff(names(stox_settings_rules), k$not_found))
+  expect_output(print(k), "Not found in this project")
+  expect_false(grepl(sentinel, paste(utils::capture.output(print(k)), collapse = "\n"), fixed = TRUE))
+})

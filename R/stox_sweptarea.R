@@ -289,6 +289,100 @@ print.nb_stox_description <- function(x, ...) {
   invisible(x)
 }
 
+# ---- The settings that decide a reproduction ------------------------------------
+
+stox_settings_rules <- list(
+  "sweep width and density" = list(fun = "SweptArea|Sweep|Compensation", par = "sweep|width|spread"),
+  "filters (fields only)" = list(fun = "Filter", par = NULL),
+  "bootstrap" = list(fun = "Bootstrap|runBoot", par = "boot|seed"),
+  "raising and length distribution" = list(
+    fun = "(^|::)(LengthDistribution|SpeciesCategoryCatch)$|LengthDist", par = "raising|priority"
+  ),
+  "PSUs, strata, survey and layers" = list(fun = "PSU|Stratum|Survey|Layer", par = NULL),
+  "translations" = list(fun = "Translate", par = NULL)
+)
+
+#' The settings of a StoX project that matter for a reproduction
+#'
+#' Picks, from the structure of an existing StoX project, the items that decide
+#' whether a rerun can reproduce its figures (D-09, D-10): the sweep width and
+#' how density is computed, any compensation of the length distribution, the
+#' fields the filters use, the bootstrap settings, how catches are raised, the
+#' PSU, stratum, survey and layer definitions, and translations. It works on the
+#' output of [describe_stox_project()], so it shows nothing that function
+#' withholds (paths, literal values in filters, free text, process data), and it
+#' says which items the project does not contain. It reads StoX 2.7
+#' (`project.xml`) and StoX 3 or later (`project.json`) projects; the matching is
+#' by function and parameter names, and StoX 2.7 names have not been verified
+#' against a real project, so an item reported as not found there should be
+#' looked for by hand.
+#'
+#' @param x An `nb_stox_description` from [describe_stox_project()], or the path
+#'   of a project (relative to `root`), which is described first.
+#' @inheritParams read_survey
+#' @return An `nb_stox_settings` list: `format`, `versions`, `chain` (the
+#'   processes in order), `settings` (a tibble with the item and the columns of
+#'   the description's `processes`), `not_found` (items with no match) and
+#'   `process_data` (entry counts only).
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(file.path(root, "synthetic", "process"), recursive = TRUE)
+#' jsonlite::write_json(
+#'   list(project = list(
+#'     RstoxPackageVersion = list("RstoxFramework_4.2.1"),
+#'     models = list(baseline = list(list(
+#'       processName = "AbundanceDensity",
+#'       functionName = "RstoxBase::SweptAreaDensity",
+#'       functionParameters = list(SweepWidthMethod = "Constant", SweepWidth = 20)
+#'     )))
+#'   )),
+#'   file.path(root, "synthetic", "process", "project.json"), auto_unbox = TRUE
+#' )
+#' stox_key_settings("synthetic", root = root)
+stox_key_settings <- function(x, root = data_root()) {
+  d <- if (inherits(x, "nb_stox_description")) x else describe_stox_project(x, root = root)
+  p <- d$processes
+  rows <- lapply(names(stox_settings_rules), function(item) {
+    r <- stox_settings_rules[[item]]
+    hit <- grepl(r$fun, p$`function`, ignore.case = TRUE) |
+      (if (is.null(r$par)) FALSE else grepl(r$par, p$parameter, ignore.case = TRUE))
+    hit[is.na(hit)] <- FALSE
+    if (!any(hit)) return(NULL)
+    dplyr::bind_cols(tibble::tibble(item = item), p[hit, ])
+  })
+  names(rows) <- names(stox_settings_rules)
+  settings <- dplyr::bind_rows(rows)
+  structure(
+    list(format = d$format, versions = d$versions,
+         chain = unique(p[c("model", "step", "process", "function")]),
+         settings = settings,
+         not_found = names(rows)[vapply(rows, is.null, logical(1))],
+         process_data = d$process_data),
+    class = "nb_stox_settings"
+  )
+}
+
+#' @export
+print.nb_stox_settings <- function(x, ...) {
+  cat("<nb_stox_settings> structure only; paths, expressions and process data withheld\n")
+  cat("Format:", x$format, "\n")
+  cat("Versions:", paste(x$versions, collapse = "; "), "\n\n")
+  cat("Chain, in order:\n")
+  print(x$chain, n = Inf, width = Inf)
+  for (item in setdiff(names(stox_settings_rules), x$not_found)) {
+    cat("\n== ", item, "\n", sep = "")
+    print(x$settings[x$settings$item == item, setdiff(names(x$settings), "item")],
+          n = Inf, width = Inf)
+  }
+  if (length(x$not_found)) {
+    cat("\nNot found in this project:", paste(x$not_found, collapse = "; "), "\n")
+  }
+  cat("\nProcess data (entry counts only):\n")
+  print(x$process_data, n = Inf)
+  invisible(x)
+}
+
 # ---- Pinned StoX release ------------------------------------------------------
 
 # The RstoxFramework version the pipeline is built and tested against (StoX 4.2;
