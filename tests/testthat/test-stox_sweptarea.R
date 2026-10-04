@@ -894,8 +894,9 @@ test_that("a copy of a project reproduces our estimates and the original is left
   expect_true(length(run$reports) >= 4L)
   expect_false(is.null(run$reference))
   # same engine and same input: the baseline values are ours
-  cmp <- compare_estimates(res$estimates, official_reports_to_table(run$reports), "baseline")
-  expect_equal(nrow(cmp), nrow(res$estimates))
+  with_value <- res$estimates[!is.na(res$estimates$value), ]
+  cmp <- compare_estimates(with_value, official_reports_to_table(run$reports), "baseline")
+  expect_equal(nrow(cmp), nrow(with_value))
   expect_equal(cmp$ratio, rep(1, nrow(cmp)), tolerance = 1e-9)
   # nothing but names and counts is printed
   shown <- paste(utils::capture.output(print(run)), collapse = "\n")
@@ -1130,6 +1131,29 @@ test_that("only the selected strata are counted: stations elsewhere are left out
   all <- inclusion_summary(quick_config(), root = s$root)
   expect_false(any(grepl("selected of", all$rules$rule)))
   expect_equal(nrow(all$by_stratum), 4L)
+})
+
+test_that("a selected stratum that is not sampled stays in the estimates with an NA value", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  d <- s$sv$stations[s$sv$stations$design_station & s$sv$stations$stratum == "SYN-D", ]
+  dir.create(file.path(s$root, "exclusions"))
+  writeLines(as.character(d$serialnumber), file.path(s$root, "exclusions", "d.txt"))
+  cfg <- quick_config(2L)
+  cfg$inclusion$exclude_stations_file <- "exclusions/d.txt"
+  expect_message(
+    res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st"))),
+    "no station kept")
+  e <- res$estimates[res$estimates$species_code == "SYN001" & res$estimates$quantity == "biomass", ]
+  expect_true("SYN-D" %in% e$stratum)
+  expect_true(is.na(e$value[e$stratum == "SYN-D"]))
+  expect_false(anyNA(e$value[e$stratum != "SYN-D"]))
+  expect_equal(res$support$n_stations[res$support$stratum == "SYN-D" & res$support$species_code == "SYN001"], 0L)
+  # nothing is staged for the unsampled stratum
+  if (!is.null(res$staged$files)) {
+    est_file <- res$staged$files[grepl("estimates\\.csv$", res$staged$files)]
+    if (length(est_file)) expect_false(any(grepl("SYN-D", readLines(est_file))))
+  }
 })
 
 test_that("a selection that cannot be applied is refused", {

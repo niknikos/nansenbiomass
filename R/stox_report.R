@@ -35,7 +35,7 @@ tidy_report <- function(dt, codes, stratum = NULL, cols) {
 # SD over the bootstrap mean; the interval is the 2.5% to 97.5% percentile
 # interval of the bootstrap.
 stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
-                                      run_time = Sys.time()) {
+                                      run_time = Sys.time(), unsampled = character(0)) {
   codes <- cfg$species
   units <- c(biomass = "tonnes", abundance = "millions")
   # Catch-weight biomass is in kg; super-individual biomass is in grams
@@ -56,6 +56,17 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
     )
     m <- merge(base, boot, by = c("stratum", "species_code"), all.x = TRUE, sort = FALSE)
     m <- m[!is.na(m$value), , drop = FALSE]
+    # A selected stratum with no station kept is not dropped: it stays in the table with
+    # an NA estimate. (A sampled stratum without catch of a species has no StoX row and
+    # is left as before.)
+    grid <- expand.grid(stratum = unsampled, species_code = codes,
+                        stringsAsFactors = FALSE)
+    absent <- grid[!paste(grid$stratum, grid$species_code) %in% paste(m$stratum, m$species_code), ,
+                   drop = FALSE]
+    if (nrow(absent)) {
+      m <- dplyr::bind_rows(m, data.frame(stratum = absent$stratum, species_code = absent$species_code,
+                                          stringsAsFactors = FALSE))
+    }
     tibble::tibble(
       survey_id = cfg$survey$label,
       year = cfg$survey$year,

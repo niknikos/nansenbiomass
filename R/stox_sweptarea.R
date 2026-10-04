@@ -920,9 +920,18 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       }
 
       cv <- code_version_string(built$template_version)
-      estimates <- stox_reports_to_estimates(r, cfg, hash, cv)
       support <- stox_support_table(survey, inc$keep, inc$stratum, cfg)
-      staged <- stage_export(estimates, support, cfg$data$stratum_names,
+      unsampled <- setdiff(cfg$data$stratum_names,
+                           unique(inc$stratum[inc$keep]))
+      estimates <- stox_reports_to_estimates(r, cfg, hash, cv, unsampled = unsampled)
+      # Strata without an estimate (not sampled) stay in `estimates` as NA; nothing is
+      # staged for them.
+      candidate <- estimates[!is.na(estimates$value), , drop = FALSE]
+      if (length(unsampled) > 0L) {
+        message(sprintf("%d selected strata have no station kept; they stay in the table with an NA estimate and the total covers the sampled strata only.",
+                        length(unsampled)))
+      }
+      staged <- stage_export(candidate, support, cfg$data$stratum_names,
                              run_label = paste0(cfg$survey$label, "-", run_label),
                              min_stations = cfg$disclosure$min_stations,
                              min_positive = cfg$disclosure$min_positive,
@@ -931,7 +940,7 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       # whole export fails (D-03). The total, with every stratum withheld, can still pass
       # and reveals no stratum, so it is staged separately.
       staged_total <- if (identical(staged$outcome, "pass")) NULL else
-        stage_export(estimates[estimates$stratum == "total", ], support, cfg$data$stratum_names,
+        stage_export(candidate[candidate$stratum == "total", ], support, cfg$data$stratum_names,
                      run_label = paste0(cfg$survey$label, "-", run_label, "-total-only"),
                      min_stations = cfg$disclosure$min_stations,
                      min_positive = cfg$disclosure$min_positive,

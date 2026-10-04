@@ -413,6 +413,16 @@ file with full precision in the project folder), and the station counts, the sup
 the airlock use the selection only. A listed stratum that is not in the file is refused (`SX-STRATA-05`), as
 is a selection that matches nothing (`SX-STRATA-03`).
 
+**Selected strata that are not sampled (4 October 2026, project lead).** The selection defines the strata
+of the estimate; it does not depend on which of them were sampled. A selected stratum with no station kept is
+not dropped: `run_estimate()` keeps one row for it per species and quantity, with `value` NA (and no CV or
+interval), and prints one message with the number of such strata. A sampled stratum without catch of a
+species still has no row, as before (see the open question below). Interpretation to keep in view: StoX's total sums the strata that
+have an estimate, so with an unsampled stratum the total covers the sampled part of the area only; it is
+not an estimate for the whole selected area. The staged export carries only cells with a value (nothing is
+released for an unsampled stratum), the support table keeps the zero counts, and the open question on
+strata without a catch (below) stays open for how Section 9 should treat NA cells.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
