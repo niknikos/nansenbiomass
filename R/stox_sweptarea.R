@@ -508,19 +508,38 @@ station_strata <- function(station, polygons, label) {
   out
 }
 
-# Stratum names from the polygons, when the configuration does not list them.
+# The strata to estimate: those listed in `data.stratum_names` and/or matching
+# `data.stratum_pattern`, else all strata of the polygon file (in file order). The
+# result is written back to `cfg$data$stratum_names`, so that everything downstream
+# (station counts, support table, totals, airlock) uses the selection only.
 resolve_strata_names <- function(cfg, polygons) {
-  if (!is.null(cfg$data$stratum_names)) return(cfg)
   label <- cfg$data$stratum_label
   if (!label %in% names(polygons)) {
     nb_abort("SX-STRATA-02", "The stratum polygons have no attribute named by data.stratum_label.")
   }
-  nm <- unique(as.character(polygons[[label]]))
-  nm <- nm[!is.na(nm)]
-  if (length(nm) == 0L || any(nm == "total")) {
-    nb_abort("SX-STRATA-03", "The stratum polygons have no usable stratum names.")
+  in_file <- unique(as.character(polygons[[label]]))
+  in_file <- in_file[!is.na(in_file)]
+  explicit <- cfg$data$stratum_names
+  pattern <- cfg$data$stratum_pattern
+  if (is.null(explicit) && is.null(pattern)) {
+    chosen <- in_file
+  } else {
+    chosen <- character(0)
+    if (!is.null(explicit)) {
+      absent <- setdiff(explicit, in_file)
+      if (length(absent)) {
+        nb_abort("SX-STRATA-05", paste0(length(absent), " of the strata in data.stratum_names are not in the polygons."))
+      }
+      chosen <- explicit
+    }
+    if (!is.null(pattern)) chosen <- union(chosen, grep(pattern, in_file, value = TRUE))
+    chosen <- in_file[in_file %in% chosen]
   }
-  cfg$data$stratum_names <- nm
+  if (length(chosen) == 0L || any(chosen == "total")) {
+    nb_abort("SX-STRATA-03", "No usable stratum is selected.")
+  }
+  cfg$data$stratum_names <- chosen
+  attr(cfg, "n_strata_in_file") <- length(in_file)
   cfg
 }
 
@@ -683,8 +702,15 @@ apply_inclusion <- function(st, cfg, polygons, exclude = NULL) {
   if (isTRUE(cfg$inclusion$positive_distance)) {
     step(paste0("distance > 0 (recovery: ", method, ")"), no_distance & !recovered)
   }
+  # Stations are assigned with all the polygons of the file (the first that contains the start
+  # position, as StoX does), and only then restricted to the selected strata.
   stratum <- station_strata(st, polygons, cfg$data$stratum_label)
   step("start position inside the strata", is.na(stratum))
+  n_file <- attr(cfg, "n_strata_in_file")
+  if (!is.null(n_file) && length(cfg$data$stratum_names) < n_file) {
+    step(sprintf("stratum among the %d selected of %d strata", length(cfg$data$stratum_names), n_file),
+         !is.na(stratum) & !stratum %in% cfg$data$stratum_names)
+  }
   # The distance StoX will use: the recorded one, or the recovered one.
   distance_used <- st$distance
   from_log <- recovered & !is.na(rec$log)
@@ -869,8 +895,9 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       }
       total_strata <- cfg$data$stratum_names[is.na(flag) | flag]
 
+      selected <- polygons[as.character(polygons[[cfg$data$stratum_label]]) %in% cfg$data$stratum_names, ]
       built <- build_stox_project(
-        cfg, list(biotic_files = files, strata_file = strata_file, keep_keys = keys,
+        cfg, list(biotic_files = files, strata_polygons = selected, keep_keys = keys,
                   species_categories = categories, translation = translation,
                   total_strata = total_strata),
         project_path

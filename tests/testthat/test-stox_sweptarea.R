@@ -232,9 +232,12 @@ test_that("stations outside the strata are counted, and polygons need the label"
   sf::st_write(polys[polys$StratumName != "SYN-D", ],
                file.path(s$root, "strata", "three.geojson"), quiet = TRUE)
   cfg$data$strata <- "strata/three.geojson"
+  # a listed stratum that is not in the polygons is refused (a typo would otherwise go unnoticed)
+  expect_error(inclusion_summary(cfg, root = s$root), "SX-STRATA-05|SX-INC-01")
+  cfg$data$stratum_names <- NULL
   inc <- inclusion_summary(cfg, root = s$root)
   expect_equal(inc$rules$n_excluded[inc$rules$rule == "start position inside the strata"], 8L)
-  expect_equal(inc$by_stratum$n_kept[inc$by_stratum$stratum == "SYN-D"], 0L)
+  expect_equal(inc$by_stratum$stratum, c("SYN-A", "SYN-B", "SYN-C"))
   cfg$data$stratum_label <- "Name"
   cnd <- expect_error(inclusion_summary(cfg, root = s$root), class = "nansenbiomass_error")
   expect_equal(cnd$nb_code, "SX-STRATA-02")
@@ -1100,4 +1103,71 @@ test_that("when the full export fails the airlock, the totals are staged on thei
   # and a run whose export passes has no separate totals
   ok <- suppressWarnings(run_estimate(quick_config(2L), root = s$root, staging_dir = file.path(s$root, "ok")))
   if (identical(ok$staged$outcome, "pass")) expect_null(ok$staged_total_only)
+})
+
+# ---- Selecting the strata of the surveyed EEZs ----------------------------------------
+
+test_that("only the selected strata are counted: stations elsewhere are left out", {
+  s <- synthetic_root()
+  cfg <- quick_config()
+  cfg$data$stratum_names <- c("SYN-A", "SYN-B")
+  inc <- inclusion_summary(cfg, root = s$root)
+  r <- inc$rules
+  expect_equal(r$n_excluded[grepl("^stratum among the 2 selected of 4", r$rule)], 18L)   # 10 in C, 8 in D
+  expect_equal(utils::tail(r$n_after, 1), 27L)
+  expect_equal(inc$by_stratum$stratum, c("SYN-A", "SYN-B"))
+  expect_equal(inc$by_stratum$n_kept, c(12L, 15L))
+  # the same selection by pattern, and both together (union, in file order)
+  p <- quick_config()
+  p$data$stratum_names <- NULL
+  p$data$stratum_pattern <- "^SYN-[AB]$"
+  expect_equal(inclusion_summary(p, root = s$root)$by_stratum$stratum, c("SYN-A", "SYN-B"))
+  b <- quick_config()
+  b$data$stratum_names <- "SYN-D"
+  b$data$stratum_pattern <- "^SYN-[AB]$"
+  expect_equal(inclusion_summary(b, root = s$root)$by_stratum$stratum, c("SYN-A", "SYN-B", "SYN-D"))
+  # no selection: all strata, no selection step
+  all <- inclusion_summary(quick_config(), root = s$root)
+  expect_false(any(grepl("selected of", all$rules$rule)))
+  expect_equal(nrow(all$by_stratum), 4L)
+})
+
+test_that("a selection that cannot be applied is refused", {
+  s <- synthetic_root()
+  x <- quick_config(); x$data$stratum_names <- c("SYN-A", "NOT-THERE")
+  expect_error(inclusion_summary(x, root = s$root), "SX-STRATA-05|SX-INC-01")
+  y <- quick_config(); y$data$stratum_names <- NULL; y$data$stratum_pattern <- "^nothing"
+  expect_error(inclusion_summary(y, root = s$root), "SX-STRATA-03|SX-INC-01")
+  raw <- yaml::read_yaml(example_config())
+  raw$data$stratum_pattern <- "([unbalanced"
+  expect_error(validate_config(raw), "CF-VAL-01")
+  raw$data$stratum_pattern <- NULL
+  raw$data$stratum_pattern <- c("a", "b")
+  expect_error(validate_config(raw), "CF-VAL-01")
+})
+
+test_that("a run estimates the selected strata only, from a WKT strata file", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  wkt <- sf::st_as_text(sf::st_geometry(sf::st_transform(s$sv$strata, 4326)))
+  writeLines(paste0(s$sv$strata$stratum, "\t", wkt), file.path(s$root, "strata", "synthetic.wkt"))
+  cfg <- quick_config(2L)
+  cfg$data$strata <- "strata/synthetic.wkt"
+  cfg$data$stratum_label <- "stratum"
+  cfg$data$stratum_names <- NULL
+  cfg$data$stratum_pattern <- "^SYN-[AB]$"
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  est <- res$estimates
+  expect_setequal(unique(est$stratum), c("SYN-A", "SYN-B", "total"))
+  expect_setequal(unique(res$support$stratum), c("SYN-A", "SYN-B"))
+  expect_equal(sum(res$support$n_stations[res$support$species_code == "SYN001"]), 27L)
+  direct <- direct_biomass(s$sv, "SYN001")[c("SYN-A", "SYN-B")]
+  b <- est[est$species_code == "SYN001" & est$quantity == "biomass", ]
+  expect_equal(b$value[b$stratum %in% c("SYN-A", "SYN-B")][order(b$stratum[b$stratum %in% c("SYN-A", "SYN-B")])],
+               as.numeric(direct), tolerance = 1e-6)
+  expect_equal(b$value[b$stratum == "total"], sum(direct), tolerance = 1e-6)
+  # StoX received the selected polygons only
+  wkt_in_project <- readLines(file.path(res$project_path, "strata-selected.wkt"))
+  expect_length(wkt_in_project, 2L)
+  expect_false(any(grepl("SYN-C|SYN-D", wkt_in_project)))
 })

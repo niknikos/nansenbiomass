@@ -72,7 +72,16 @@ validate_config <- function(cfg) {
   if (!is_string(cfg$data$stratum_label)) {
     cf_abort("CF-TYPE-01", "data.stratum_label", "must name the polygon attribute holding stratum names")
   }
-  # optional: without it, the names are read from the stratum polygons when the run starts
+  # optional pattern (a regular expression) selecting strata by name, for example those of the
+  # surveyed EEZs; used together with `stratum_names`
+  pat <- cfg$data$stratum_pattern
+  if (!is.null(pat)) {
+    if (!is_string(pat) || inherits(try(grepl(pat, "x"), silent = TRUE), "try-error")) {
+      cf_abort("CF-VAL-01", "data.stratum_pattern", "must be a valid regular expression")
+    }
+  }
+  # optional: the strata to estimate; without `stratum_names` and `stratum_pattern`, all strata of
+  # the polygon file are used
   strata <- cfg$data$stratum_names
   if (!is.null(strata)) {
     if (!is.atomic(strata) || length(strata) == 0L || anyNA(strata) ||
@@ -236,8 +245,12 @@ validate_config <- function(cfg) {
 #'   file in any format sf reads, or a StoX 2.7 `project.xml` holding the
 #'   strata), both relative to `NANSEN_DATA_ROOT`;
 #'   `stratum_label`, the polygon attribute holding stratum names (default
-#'   `StratumName`, as in StoX); and optionally `stratum_names` (without it, the
-#'   names are read from the polygons; see [stox_strata()]).
+#'   `StratumName`, as in StoX); and optionally `stratum_names` and `stratum_pattern`
+#'   (a regular expression) to select the strata to estimate, for example those of the
+#'   surveyed EEZs. Without either, all strata of the polygon file are used and their
+#'   names are read from it (see [stox_strata()]). Stations outside the selected strata
+#'   are left out before the StoX project is built, and nothing is estimated or reported
+#'   for the other strata.
 #' * `inclusion`: allowed `stationtype`, `samplequality`, `gearcondition` and `gear`
 #'   codes (a field left out means no restriction), `positive_distance`
 #'   (default `true`) and `distance_recovery` for zero or missing distances

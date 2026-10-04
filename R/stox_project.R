@@ -143,7 +143,7 @@ stox_species_categories <- function(files, codes) {
 
 # Builds the StoX project for one run and returns what the runner needs.
 #
-# `inputs`: biotic_files, strata_file, keep_keys (HaulKey values of the stations
+# `inputs`: biotic_files, strata_polygons (the selected strata, as sf), keep_keys (HaulKey values of the stations
 # to keep), species_categories (the StoX species categories to keep), translation
 # (NULL or a table of EffectiveTowDistance, NewValue and HaulKey) and total_strata
 # (strata that count towards the total).
@@ -187,7 +187,7 @@ build_stox_project <- function(cfg, inputs, project_path) {
   imp <- cfg$biomass$imputation
   values <- list(
     biotic_files = inputs$biotic_files,
-    strata_file = inputs$strata_file,
+    strata_file = file.path(project_path, "strata-selected.wkt"),
     stratum_label = cfg$data$stratum_label,
     stoxbiotic_process = if (flags$distance_translation) "TranslateStoxBiotic" else "StoxBiotic",
     filter_expression = list(Haul = paste0("HaulKey %in% c(", keys, ")")),
@@ -217,6 +217,11 @@ build_stox_project <- function(cfg, inputs, project_path) {
   )
 
   RstoxFramework::createProject(project_path, ow = TRUE, open = TRUE)
+  # Only the selected strata reach StoX, as a StoX WKT file (name, tab, polygon) with full precision
+  polys <- inputs$strata_polygons
+  writeLines(paste0(as.character(polys[[cfg$data$stratum_label]]), "\t",
+                    sf::st_as_text(sf::st_geometry(polys), digits = 15)),
+             values$strata_file)
   for (proc in tpl$processes) {
     if (!template_active(proc, flags)) next
     spec <- list(processName = proc$name, functionName = proc$`function`)

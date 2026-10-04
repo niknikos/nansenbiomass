@@ -24,8 +24,12 @@ Reads one survey configuration (\verb{configs/<survey>.yml}) and validates it wi
 file in any format sf reads, or a StoX 2.7 \code{project.xml} holding the
 strata), both relative to \code{NANSEN_DATA_ROOT};
 \code{stratum_label}, the polygon attribute holding stratum names (default
-\code{StratumName}, as in StoX); and optionally \code{stratum_names} (without it, the
-names are read from the polygons; see \code{\link[=stox_strata]{stox_strata()}}).
+\code{StratumName}, as in StoX); and optionally \code{stratum_names} and \code{stratum_pattern}
+(a regular expression) to select the strata to estimate, for example those of the
+surveyed EEZs. Without either, all strata of the polygon file are used and their
+names are read from it (see \code{\link[=stox_strata]{stox_strata()}}). Stations outside the selected strata
+are left out before the StoX project is built, and nothing is estimated or reported
+for the other strata.
 \item \code{inclusion}: allowed \code{stationtype}, \code{samplequality}, \code{gearcondition} and \code{gear}
 codes (a field left out means no restriction), \code{positive_distance}
 (default \code{true}) and \code{distance_recovery} for zero or missing distances

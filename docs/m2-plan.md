@@ -401,6 +401,18 @@ the full export fails the airlock (with 48 strata most have fewer than 5 station
 their own (`staged_total_only`), which reveals no stratum. `configs/survey-A.yml` is the configuration
 written from the project file; the survey label, the year and the point estimate are marked "to confirm".
 
+**Selecting the strata of the surveyed EEZs (4 October 2026, project lead).** A strata file can hold strata of
+other EEZs, and the data agreements cover the surveyed country's waters, so estimates must be made for the
+surveyed EEZ(s) only. `data.stratum_names` (a list) and the new `data.stratum_pattern` (a regular
+expression) now select the strata to estimate (union; without either, all strata of the file). Stations are
+assigned with all the polygons of the file (the first that contains the start position, as StoX does) and
+only then restricted to the selected strata, so a station on a boundary is assigned as in the official
+project; stations in other strata are excluded before the StoX project is built (an inclusion step with
+counts, "stratum among the k selected of n"), StoX receives the selected polygons only (written as a StoX WKT
+file with full precision in the project folder), and the station counts, the support table, the totals and
+the airlock use the selection only. A listed stratum that is not in the file is refused (`SX-STRATA-05`), as
+is a selection that matches nothing (`SX-STRATA-03`).
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
