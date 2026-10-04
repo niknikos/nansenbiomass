@@ -575,6 +575,10 @@ test_that("coded clauses in filters are shown and identifier clauses are not", {
   expect_equal(show("stationtype %in% c(12) & samplequality in [12,13] | gearcondition == 1"),
                "stationtype %in% c(12) & samplequality in [12,13] | gearcondition == 1")
   expect_equal(show("species not in [90001,90002]"), "species not in [90001,90002]")
+  expect_equal(show("gearcondition %in% \"1\""), "gearcondition %in% \"1\"")        # a bare value
+  expect_equal(show("Gear %in% c(\"3032\", \"3033\") & gearcondition %in% \"1\" & samplequality %in% \"12\""),
+               "Gear %in% c(\"3032\", \"3033\") & gearcondition %in% \"1\" & samplequality %in% \"12\"")
+  expect_equal(show("serialno %in% \"12\""), "<withheld: expression>")
   expect_equal(show("distance > 0.5 and gear == 3270"), "distance > 0.5 and gear == 3270")
   expect_equal(show("(stationtype == 12) and (gearcondition == 1)"),
                "(stationtype == 12) and (gearcondition == 1)")
@@ -1043,4 +1047,57 @@ test_that("super-individual reports leave out individuals without a weight, as t
   b_part <- total(part, "b")
   expect_true(is.finite(b_part))     # missing weights are removed, not propagated
   expect_lt(b_part, b_full)          # and the biomass is lower than with all weights
+})
+
+# ---- StoX WKT strata, the gear rule and the total-only export -------------------------
+
+test_that("a StoX WKT stratum file is read like a polygon file", {
+  s <- synthetic_root()
+  wkt <- sf::st_as_text(sf::st_geometry(sf::st_transform(s$sv$strata, 4326)))
+  writeLines(paste0(s$sv$strata$stratum, "\t", wkt), file.path(s$root, "strata", "synthetic.wkt"))
+  d <- stox_strata("strata/synthetic.wkt", root = s$root, out = "strata/from-wkt.geojson")
+  expect_equal(d$source, "a StoX stratum WKT file")
+  expect_equal(d$names, c("SYN-A", "SYN-B", "SYN-C", "SYN-D"))
+  expect_equal(sf::st_read(file.path(s$root, "strata", "from-wkt.geojson"), quiet = TRUE)$stratum, d$names)
+  cfg <- quick_config()
+  cfg$data$strata <- "strata/synthetic.wkt"
+  cfg$data$stratum_label <- "stratum"
+  inc_wkt <- inclusion_summary(cfg, root = s$root)
+  inc_geo <- inclusion_summary(quick_config(), root = s$root)
+  expect_equal(inc_wkt$by_stratum$n_kept, inc_geo$by_stratum$n_kept)
+  writeLines(c("A", "B\tnot a polygon"), file.path(s$root, "strata", "bad.wkt"))
+  expect_error(stox_strata("strata/bad.wkt", root = s$root), "SX-STRATA-04|SX-STR-04")
+})
+
+test_that("the gear rule keeps the stations of the listed gears", {
+  s <- synthetic_root()
+  cfg <- quick_config()
+  cfg$inclusion$gear <- "9999"
+  expect_equal(inclusion_summary(cfg, root = s$root)$rules$n_after |> utils::tail(1), 45L)
+  cfg$inclusion$gear <- c("1111", "2222")
+  r <- inclusion_summary(cfg, root = s$root)$rules
+  expect_equal(r$n_excluded[grepl("^gear in", r$rule)], 54L - 4L - 3L - 0L)   # all that passed the code rules
+  expect_equal(utils::tail(r$n_after, 1), 0L)
+  x <- yaml::read_yaml(example_config())
+  x$inclusion$gear <- 3032
+  expect_equal(validate_config(x)$inclusion$gear, "3032")
+})
+
+test_that("when the full export fails the airlock, the totals are staged on their own", {
+  skip_if_no_stox()
+  s <- synthetic_root(excluded = c(pelagic = 1))
+  cfg <- quick_config(2L)
+  cfg$species <- "SYN001"
+  cfg$disclosure$min_stations <- 11L        # strata with fewer stations cannot be released
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  expect_equal(res$staged$outcome, "fail")
+  expect_false(is.null(res$staged_total_only))
+  expect_equal(res$staged_total_only$outcome, "pass")
+  est_file <- res$staged_total_only$files[grepl("estimates\\.csv$", res$staged_total_only$files)]
+  rel <- utils::read.csv(est_file)
+  expect_equal(unique(rel$stratum), "total")
+  expect_setequal(unique(rel$quantity), c("biomass", "abundance"))
+  # and a run whose export passes has no separate totals
+  ok <- suppressWarnings(run_estimate(quick_config(2L), root = s$root, staging_dir = file.path(s$root, "ok")))
+  if (identical(ok$staged$outcome, "pass")) expect_null(ok$staged_total_only)
 })

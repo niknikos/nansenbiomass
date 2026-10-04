@@ -31,7 +31,8 @@ Invisibly, an \code{nb_strata} list with \code{source}, \code{label}, \code{name
 \code{project.xml}, \code{include_in_total}.
 }
 \description{
-Finds the stratum polygons in a polygon file (any format sf reads), a StoX
+Finds the stratum polygons in a polygon file (any format sf reads, or a StoX
+WKT file with one \verb{name<TAB>polygon} line per stratum), a StoX
 2.7 \code{project.xml}, a StoX 3 or later \code{project.json} (its process data), or a
 project folder (the project file's process data, or a polygon file saved in the
 folder, such as the output of the stratum process), and reports the stratum

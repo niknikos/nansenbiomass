@@ -20,7 +20,10 @@ or an \code{nb_config} from \code{\link[=read_config]{read_config()}}.}
 }
 \value{
 Invisibly, a list with \code{estimates} (Section 9 table), \code{support},
-\code{staged} (the result of \code{\link[=stage_export]{stage_export()}}), \code{project_path} and \code{run_label}.
+\code{staged} (the result of \code{\link[=stage_export]{stage_export()}}), \code{staged_total_only} (when \code{staged}
+fails the airlock, for example because a stratum has too few stations: the
+totals alone, staged separately; otherwise \code{NULL}), \code{project_path} and
+\code{run_label}.
 }
 \description{
 The single entry point of the \code{stox_sweptarea} module. It reads the

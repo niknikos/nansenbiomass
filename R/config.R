@@ -84,7 +84,7 @@ validate_config <- function(cfg) {
 
   # inclusion rules: allowed codes per field; an absent field means no restriction
   inc <- cfg$inclusion
-  for (f in c("stationtype", "samplequality", "gearcondition")) {
+  for (f in c("stationtype", "samplequality", "gearcondition", "gear")) {
     inc[[f]] <- as_codes(inc[[f]], paste0("inclusion.", f))
   }
   inc$positive_distance <- if (is.null(inc$positive_distance)) TRUE else inc$positive_distance
@@ -238,7 +238,7 @@ validate_config <- function(cfg) {
 #'   `stratum_label`, the polygon attribute holding stratum names (default
 #'   `StratumName`, as in StoX); and optionally `stratum_names` (without it, the
 #'   names are read from the polygons; see [stox_strata()]).
-#' * `inclusion`: allowed `stationtype`, `samplequality` and `gearcondition`
+#' * `inclusion`: allowed `stationtype`, `samplequality`, `gearcondition` and `gear`
 #'   codes (a field left out means no restriction), `positive_distance`
 #'   (default `true`) and `distance_recovery` for zero or missing distances
 #'   (`none`, the default, `log` or `log_or_positions`), and optionally
@@ -310,7 +310,7 @@ print.nb_config <- function(x, ...) {
   cat("<nb_config>", x$survey$label, x$survey$year, "\n")
   cat("  biotic files:", length(x$data$biotic), " strata:",
       if (is.null(x$data$stratum_names)) "from the polygons" else length(x$data$stratum_names), "\n")
-  for (f in c("stationtype", "samplequality", "gearcondition")) {
+  for (f in c("stationtype", "samplequality", "gearcondition", "gear")) {
     v <- x$inclusion[[f]]
     cat(sprintf("  inclusion %-14s %s\n", paste0(f, ":"),
                 if (is.null(v)) "any" else paste(v, collapse = ", ")))

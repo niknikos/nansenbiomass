@@ -418,6 +418,9 @@ read_strata_any <- function(target) {
   if (grepl("\\.xml$", target, ignore.case = TRUE)) {
     return(list(polygons = read_strata_polygons(target, "stratum"), source = "a StoX 2.7 project.xml"))
   }
+  if (grepl("\\.wkt$", target, ignore.case = TRUE)) {
+    return(list(polygons = read_strata_wkt(target, "stratum"), source = "a StoX stratum WKT file"))
+  }
   if (grepl("project\\.json$", target, ignore.case = TRUE)) {
     out <- from_json(target)
     if (is.null(out)) nb_abort("SX-STR-01", "The project file holds no stratum polygons in its process data.")
@@ -428,7 +431,8 @@ read_strata_any <- function(target) {
 
 #' Read the strata of a survey from a project or a polygon file
 #'
-#' Finds the stratum polygons in a polygon file (any format sf reads), a StoX
+#' Finds the stratum polygons in a polygon file (any format sf reads, or a StoX
+#' WKT file with one `name<TAB>polygon` line per stratum), a StoX
 #' 2.7 `project.xml`, a StoX 3 or later `project.json` (its process data), or a
 #' project folder (the project file's process data, or a polygon file saved in the
 #' folder, such as the output of the stratum process), and reports the stratum

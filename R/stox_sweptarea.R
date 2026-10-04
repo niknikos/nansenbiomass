@@ -49,8 +49,8 @@ filter_list <- paste0("(?:c\\(|\\[|\\()\\s*", filter_value, "(?:\\s*,\\s*", filt
                       "){0,", filter_max_values - 1L, "}\\s*(?:\\)|\\])")
 filter_cmp <- paste0("^\\s*\\(*\\s*([A-Za-z_][A-Za-z0-9_.]*)\\s*(==|!=|<=|>=|<|>|=)\\s*(",
                      filter_value, ")\\s*\\)*\\s*$")
-filter_in <- paste0("^\\s*\\(*\\s*([A-Za-z_][A-Za-z0-9_.]*)\\s*(%in%|%notin%|not\\s+in|in)\\s*(",
-                    filter_list, ")\\s*\\)*\\s*$")
+filter_in <- paste0("^\\s*\\(*\\s*([A-Za-z_][A-Za-z0-9_.]*)\\s*(%in%|%notin%|not\\s+in|in)\\s*((?:",
+                    filter_list, ")|", filter_value, ")\\s*\\)*\\s*$")
 
 safe_clause <- function(clause) {
   m <- regexec(filter_cmp, clause, perl = TRUE)
@@ -491,6 +491,9 @@ station_strata <- function(station, polygons, label) {
   if (!label %in% names(polygons)) {
     nb_abort("SX-STRATA-02", "The stratum polygons have no attribute named by data.stratum_label.")
   }
+  # StoX locates stations in the strata with planar geometry (it turns s2 off)
+  old_s2 <- suppressMessages(sf::sf_use_s2(FALSE))
+  on.exit(suppressMessages(sf::sf_use_s2(old_s2)), add = TRUE)
   ok <- !is.na(station$longitudestart) & !is.na(station$latitudestart)
   out <- rep(NA_character_, nrow(station))
   if (any(ok)) {
@@ -498,7 +501,7 @@ station_strata <- function(station, polygons, label) {
                                    lat = station$latitudestart[ok]),
                         coords = c("lon", "lat"), crs = 4326)
     polygons <- sf::st_transform(polygons, 4326)
-    hit <- sf::st_intersects(pts, polygons)
+    hit <- suppressMessages(sf::st_intersects(pts, polygons))
     first <- vapply(hit, function(h) if (length(h)) h[[1]] else NA_integer_, integer(1))
     out[ok] <- as.character(polygons[[label]])[first]
   }
@@ -521,10 +524,26 @@ resolve_strata_names <- function(cfg, polygons) {
   cfg
 }
 
+# A StoX stratum WKT file: one line per stratum, the name, a tab and the polygon.
+read_strata_wkt <- function(file, label) {
+  lines <- readLines(file, warn = FALSE, encoding = "UTF-8")
+  lines <- lines[nzchar(trimws(lines))]
+  parts <- strsplit(lines, "\t", fixed = TRUE)
+  if (length(parts) == 0L || !all(lengths(parts) >= 2L)) {
+    nb_abort("SX-STRATA-04", "A stratum WKT file needs one line per stratum: the name, a tab and the polygon.")
+  }
+  geom <- tryCatch(sf::st_as_sfc(vapply(parts, `[`, "", 2L), crs = 4326),
+                   error = function(e) nb_abort("SX-STRATA-04", "A polygon in the stratum WKT file could not be read."))
+  out <- data.frame(name = trimws(vapply(parts, `[`, "", 1L)), stringsAsFactors = FALSE)
+  names(out) <- label
+  sf::st_sf(out, geometry = geom)
+}
+
 # Stratum polygons from a polygon file (any format sf reads) or from the process
 # data of a StoX 2.7 project.xml (through RstoxBase, as StoX itself does). For a
 # project.xml, each stratum's `includeintotal` flag is kept.
 read_strata_polygons <- function(file, label) {
+  if (grepl("\\.wkt$", file, ignore.case = TRUE)) return(read_strata_wkt(file, label))
   if (grepl("\\.xml$", file, ignore.case = TRUE)) {
     if (!requireNamespace("RstoxBase", quietly = TRUE)) {
       nb_abort("SX-STOX-01", "RstoxBase is needed to read strata from a StoX project.xml.")
@@ -560,7 +579,7 @@ recoverable_distance <- function(st) {
 #' Station counts kept and excluded by a survey's inclusion rules
 #'
 #' Applies a configuration's inclusion rules (D-09) to its biotic files, in
-#' order: allowed `stationtype`, `samplequality` and `gearcondition` codes, a
+#' order: allowed `stationtype`, `samplequality`, `gearcondition` and `gear` codes, a
 #' positive towed distance, and a start position inside the strata. A station
 #' with a missing code is excluded by a rule that lists allowed codes. The
 #' result holds counts only, to compare with the station numbers in a survey
@@ -628,7 +647,7 @@ apply_inclusion <- function(st, cfg, polygons, exclude = NULL) {
       n_excluded = excluded, n_after = sum(keep)
     )
   }
-  for (f in c("stationtype", "samplequality", "gearcondition")) {
+  for (f in c("stationtype", "samplequality", "gearcondition", "gear")) {
     allowed <- cfg$inclusion[[f]]
     if (!is.null(allowed)) {
       step(paste0(f, " in {", paste(allowed, collapse = ", "), "}"), !st[[f]] %in% allowed)
@@ -773,7 +792,10 @@ check_station_keys <- function(survey) {
 #' @inheritParams read_survey
 #' @param staging_dir The staging folder; defaults to `staging` under `root`.
 #' @return Invisibly, a list with `estimates` (Section 9 table), `support`,
-#'   `staged` (the result of [stage_export()]), `project_path` and `run_label`.
+#'   `staged` (the result of [stage_export()]), `staged_total_only` (when `staged`
+#'   fails the airlock, for example because a stratum has too few stations: the
+#'   totals alone, staged separately; otherwise `NULL`), `project_path` and
+#'   `run_label`.
 #' @export
 #' @examples
 #' if (requireNamespace("RstoxFramework", quietly = TRUE)) {
@@ -878,7 +900,17 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
                              min_stations = cfg$disclosure$min_stations,
                              min_positive = cfg$disclosure$min_positive,
                              staging_dir = staging_dir)
+      # With many strata, some usually fall below the minimum number of stations and the
+      # whole export fails (D-03). The total, with every stratum withheld, can still pass
+      # and reveals no stratum, so it is staged separately.
+      staged_total <- if (identical(staged$outcome, "pass")) NULL else
+        stage_export(estimates[estimates$stratum == "total", ], support, cfg$data$stratum_names,
+                     run_label = paste0(cfg$survey$label, "-", run_label, "-total-only"),
+                     min_stations = cfg$disclosure$min_stations,
+                     min_positive = cfg$disclosure$min_positive,
+                     staging_dir = staging_dir)
       invisible(list(estimates = estimates, support = support, staged = staged,
+                     staged_total_only = staged_total,
                      project_path = project_path, run_label = run_label))
     },
     log_dir = log_dir,

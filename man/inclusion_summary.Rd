@@ -20,7 +20,7 @@ stratum, including strata with none, and \code{include_in_total} where known).
 }
 \description{
 Applies a configuration's inclusion rules (D-09) to its biotic files, in
-order: allowed \code{stationtype}, \code{samplequality} and \code{gearcondition} codes, a
+order: allowed \code{stationtype}, \code{samplequality}, \code{gearcondition} and \code{gear} codes, a
 positive towed distance, and a start position inside the strata. A station
 with a missing code is excluded by a rule that lists allowed codes. The
 result holds counts only, to compare with the station numbers in a survey

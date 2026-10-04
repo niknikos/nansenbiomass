@@ -26,7 +26,7 @@ strata), both relative to \code{NANSEN_DATA_ROOT};
 \code{stratum_label}, the polygon attribute holding stratum names (default
 \code{StratumName}, as in StoX); and optionally \code{stratum_names} (without it, the
 names are read from the polygons; see \code{\link[=stox_strata]{stox_strata()}}).
-\item \code{inclusion}: allowed \code{stationtype}, \code{samplequality} and \code{gearcondition}
+\item \code{inclusion}: allowed \code{stationtype}, \code{samplequality}, \code{gearcondition} and \code{gear}
 codes (a field left out means no restriction), \code{positive_distance}
 (default \code{true}) and \code{distance_recovery} for zero or missing distances
 (\code{none}, the default, \code{log} or \code{log_or_positions}), and optionally
