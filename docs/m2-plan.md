@@ -199,8 +199,14 @@ in the template, so changing it later means a new template version (recorded in
   bootstrap mean; the interval is the 2.5% to 97.5% bootstrap percentiles. Biomass is in
   tonnes and abundance in millions. A stratum where a species was not caught has no row (StoX
   reports none); the total is unaffected. Whether to zero-fill is open (below).
-- Fixed in the template and not yet configurable: `RaisingFactorPriority = Weight`; bootstrap
-  on one core; the same seed for both resampled processes.
+- Bootstrap (project lead, 4 October 2026): 50 replicates in the example configuration; cores
+  are the machine's minus 2 (at least 1, never more than the replicates), or `bootstrap.cores`.
+  The result is the same on 1 and 2 cores (tested). The raising priority is now the
+  configuration value `catch.raising_factor_priority` (default `Weight`). The same seed is
+  used for both resampled processes.
+- Variable names: StoX's own variables (for example `HaulKey`) keep StoX's names, and the
+  package's own tables keep the biotic.xml names (`serialnumber`, `distance`, and so on);
+  the station key list is built from `serialnumber` and matched to StoX's `HaulKey`.
 - The synthetic generator now writes `catchproducttype`, `sampleproducttype`,
   `individualproducttype` (1), `lengthmeasurement` (E) and `lengthresolution` (1).
 

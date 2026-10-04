@@ -275,7 +275,7 @@
     "BootstrapMethodTable": "{{bootstrap_method_table}}",
     "NumberOfBootstraps": "{{replicates}}",
     "OutputProcesses": "{{output_processes}}",
-    "NumberOfCores": 1
+    "NumberOfCores": "{{cores}}"
    }
   },
   {

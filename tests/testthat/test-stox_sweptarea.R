@@ -334,7 +334,7 @@ test_that("the template fills completely and refuses an unfilled placeholder", {
   expect_setequal(
     gsub("[{}]", "", used),
     c("biotic_files", "translation_table", "stoxbiotic_process", "filter_expression",
-      "strata_file", "stratum_label", "raising_factor_priority", "sweep_width_m",
+      "strata_file", "stratum_label", "raising_factor_priority", "sweep_width_m", "cores",
       "bootstrap_method_table", "replicates", "output_processes", "survey_method",
       "survey_table")
   )
@@ -440,4 +440,35 @@ test_that("run_estimate() refuses what it cannot do, with sanitised errors", {
   expect_s3_class(err, "nansenbiomass_error")
   expect_match(conditionMessage(err), "SX-KEY-01")
   expect_false(grepl("[0-9]{5}", conditionMessage(err)))
+})
+
+test_that("bootstrap cores default to the machine's minus 2, and are configurable", {
+  cfg <- read_config(example_config())
+  expected <- max(1L, min(parallel::detectCores() - 2L, 50L))
+  expect_equal(bootstrap_cores(cfg), expected)
+  cfg$bootstrap$cores <- 3L
+  expect_equal(bootstrap_cores(cfg), 3L)
+  cfg$bootstrap$replicates <- 2L
+  expect_equal(bootstrap_cores(cfg), 2L) # never more cores than replicates
+  x <- yaml::read_yaml(example_config())
+  x$bootstrap$cores <- 0
+  expect_error(validate_config(x), "CF-VAL-02")
+  x$bootstrap$cores <- NULL
+  x$catch$raising_factor_priority <- "Mass"
+  expect_error(validate_config(x), "CF-VAL-01")
+})
+
+test_that("the bootstrap does not depend on the number of cores", {
+  skip_if_no_stox()
+  skip_if(parallel::detectCores() < 2, "needs two cores")
+  s <- synthetic_root(excluded = c(pelagic = 1))
+  run <- function(cores, dir) {
+    cfg <- quick_config(4L)
+    cfg$bootstrap$cores <- as.integer(cores)
+    suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, dir)))$estimates
+  }
+  one <- run(1, "st1")
+  two <- run(2, "st2")
+  cols <- c("species_code", "stratum", "quantity", "value", "cv", "ci_lower", "ci_upper")
+  expect_equal(one[cols], two[cols])
 })

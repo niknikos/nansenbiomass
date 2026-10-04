@@ -33,7 +33,10 @@ codes (a field left out means no restriction), \code{positive_distance}
 \item \code{swept_width}: \code{method} (\code{fixed} or \code{trawldoorspread}) and \code{fixed_m} (the
 width in metres, or the fallback where a door spread is missing).
 \item \code{species}: species codes; \code{quantities}: \code{biomass} and/or \code{abundance}.
-\item \code{bootstrap}: \code{replicates} and \code{seed} (D-10).
+\item \code{bootstrap}: \code{replicates} and \code{seed} (D-10), and optionally \code{cores} (default:
+the machine's cores minus 2, at least 1, and not more than the replicates).
+\item \code{catch}: \code{raising_factor_priority}, \code{Weight} (default) or \code{Number}, StoX's choice
+of which raising information the length distribution uses.
 \item \code{stox}: \code{version}, the RstoxFramework version the run must use.
 \item \code{disclosure}: \code{min_stations} and \code{min_positive}, at least 5 and 3 (D-03).
 }

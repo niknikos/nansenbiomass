@@ -122,7 +122,20 @@ validate_config <- function(cfg) {
     cf_abort("CF-VAL-02", "bootstrap.replicates", "must be a positive whole number")
   }
   if (!whole_number(bs$seed)) cf_abort("CF-VAL-02", "bootstrap.seed", "must be a whole number")
+  cores <- bs$cores
+  if (!is.null(cores) && (!whole_number(cores) || cores < 1)) {
+    cf_abort("CF-VAL-02", "bootstrap.cores", "must be a positive whole number, or left out for the machine's cores minus 2")
+  }
   cfg$bootstrap <- list(replicates = as.integer(bs$replicates), seed = as.integer(bs$seed))
+  if (!is.null(cores)) cfg$bootstrap$cores <- as.integer(cores)
+
+  # catch handling (to be set from the official projects, D-09)
+  catch <- cfg$catch
+  rfp <- if (is.null(catch$raising_factor_priority)) "Weight" else catch$raising_factor_priority
+  if (!is_string(rfp) || !rfp %in% c("Weight", "Number")) {
+    cf_abort("CF-VAL-01", "catch.raising_factor_priority", "must be Weight or Number")
+  }
+  cfg$catch <- list(raising_factor_priority = rfp)
 
   # StoX version pin
   cfg$stox$version <- if (is.null(cfg$stox$version)) stox_pinned_version else cfg$stox$version
@@ -143,7 +156,7 @@ validate_config <- function(cfg) {
   cfg$disclosure <- list(min_stations = as.integer(dis$min_stations),
                          min_positive = as.integer(dis$min_positive))
 
-  structure(cfg[c(required, "quantities", "stox", "disclosure")], class = "nb_config")
+  structure(cfg[c(required, "quantities", "catch", "stox", "disclosure")], class = "nb_config")
 }
 
 #' Read a survey configuration
@@ -165,7 +178,10 @@ validate_config <- function(cfg) {
 #' * `swept_width`: `method` (`fixed` or `trawldoorspread`) and `fixed_m` (the
 #'   width in metres, or the fallback where a door spread is missing).
 #' * `species`: species codes; `quantities`: `biomass` and/or `abundance`.
-#' * `bootstrap`: `replicates` and `seed` (D-10).
+#' * `bootstrap`: `replicates` and `seed` (D-10), and optionally `cores` (default:
+#'   the machine's cores minus 2, at least 1, and not more than the replicates).
+#' * `catch`: `raising_factor_priority`, `Weight` (default) or `Number`, StoX's choice
+#'   of which raising information the length distribution uses.
 #' * `stox`: `version`, the RstoxFramework version the run must use.
 #' * `disclosure`: `min_stations` and `min_positive`, at least 5 and 3 (D-03).
 #'

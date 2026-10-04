@@ -103,6 +103,17 @@ code_version_string <- function(template_version) {
          "; template sweptarea ", template_version)
 }
 
+# Cores for the bootstrap: the configured number, else the machine's cores minus
+# 2 (at least 1), and never more than the replicates.
+bootstrap_cores <- function(cfg) {
+  n <- cfg$bootstrap$cores
+  if (is.null(n)) {
+    detected <- parallel::detectCores(logical = TRUE)
+    n <- if (is.na(detected)) 1L else detected - 2L
+  }
+  as.integer(max(1L, min(n, cfg$bootstrap$replicates)))
+}
+
 # Builds the StoX project for one run and returns what the runner needs.
 #
 # `inputs`: biotic_files, strata_file, keep_keys (HaulKey values of the stations
@@ -126,9 +137,10 @@ build_stox_project <- function(cfg, inputs, project_path) {
     stoxbiotic_process = if (flags$distance_translation) "TranslateStoxBiotic" else "StoxBiotic",
     filter_expression = list(Haul = paste0("HaulKey %in% c(", keys, ")")),
     translation_table = inputs$translation,
-    raising_factor_priority = "Weight",
+    raising_factor_priority = cfg$catch$raising_factor_priority,
     sweep_width_m = cfg$swept_width$fixed_m,
     replicates = cfg$bootstrap$replicates,
+    cores = bootstrap_cores(cfg),
     output_processes = c(biomass = "Biomass", abundance = "Abundance")[use],
     bootstrap_method_table = data.table::data.table(
       ProcessName = unname(processes[use]), ResampleFunction = unname(methods[use]),

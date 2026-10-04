@@ -25,8 +25,11 @@ swept_width:
 species: [SYN001, SYN002, SYN003]
 quantities: [biomass, abundance]
 bootstrap:
-  replicates: 100
+  replicates: 50
   seed: 1
+  # cores: left out = the machine's cores minus 2 (at least 1)
+catch:
+  raising_factor_priority: Weight
 stox:
   version: 4.2.1
 disclosure:
