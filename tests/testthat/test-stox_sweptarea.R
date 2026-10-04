@@ -287,3 +287,157 @@ test_that("strata can be read from a StoX 2.7 project.xml, with includeintotal",
   expect_equal(inc$rules$n_after[nrow(inc$rules)], 45L)
   expect_equal(inc$by_stratum$include_in_total, c(TRUE, TRUE, TRUE, FALSE))
 })
+
+# ---- run_estimate(): template, project, estimate, staging ----------------------
+
+skip_if_no_stox <- function() {
+  skip_if_not_installed("RstoxFramework")
+  skip_if_not_installed("RstoxBase")
+  skip_if_not_installed("RstoxData")
+  skip_if_not_installed("data.table")
+}
+
+quick_config <- function(replicates = 5L) {
+  cfg <- read_config(example_config())
+  cfg$bootstrap$replicates <- as.integer(replicates)
+  cfg
+}
+
+# The design-based estimate computed directly in R from the synthetic tables:
+# catch weight per swept area at each station, stratum means, times stratum area.
+direct_biomass <- function(sv, species, width_m = 20) {
+  st <- sv$stations[sv$stations$design_station, ]
+  ca <- sv$survey$catch[sv$survey$catch$catchcategory == species, ]
+  kg <- tapply(ca$catchweight, ca$serialnumber, sum)
+  st$kg <- ifelse(as.character(st$serialnumber) %in% names(kg),
+                  kg[as.character(st$serialnumber)], 0)
+  st$dens <- st$kg / (st$distance * 1.852 * width_m / 1000)
+  area <- with(sv$design$strata, (xmax - xmin) * (ymax - ymin))
+  names(area) <- sv$design$strata$stratum
+  by <- tapply(st$dens, st$stratum, mean)
+  by * area[names(by)] / 1000
+}
+
+test_that("the template fills completely and refuses an unfilled placeholder", {
+  tpl <- read_stox_template()
+  expect_equal(tpl$template, "sweptarea")
+  expect_match(tpl$template_version, "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+  expect_equal(fill_template(list(a = "{{x}}", b = list(c = 1)), list(x = 1:2)),
+               list(a = 1:2, b = list(c = 1)))
+  expect_error(fill_template(list(a = "{{missing}}"), list(x = 1)), "SX-TPL-03")
+  expect_error(fill_template(list(a = "text {{x}}"), list(x = 1)), "SX-TPL-04")
+  # every placeholder the template uses is one the builder supplies
+  used <- unique(unlist(regmatches(
+    jsonlite::toJSON(tpl$processes, auto_unbox = TRUE),
+    gregexpr("\\{\\{[a-z_]+\\}\\}", jsonlite::toJSON(tpl$processes, auto_unbox = TRUE))
+  )))
+  expect_setequal(
+    gsub("[{}]", "", used),
+    c("biotic_files", "translation_table", "stoxbiotic_process", "filter_expression",
+      "strata_file", "stratum_label", "raising_factor_priority", "sweep_width_m",
+      "bootstrap_method_table", "replicates", "output_processes", "survey_method",
+      "survey_table")
+  )
+})
+
+test_that("run_estimate() reproduces the direct estimate and stages a passing export", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  res <- suppressWarnings(run_estimate(quick_config(), root = s$root,
+                                       staging_dir = file.path(s$root, "staging")))
+  est <- res$estimates
+  expect_equal(res$staged$outcome, "pass")
+  expect_true(file.exists(file.path(s$root, "staging", basename(dirname(res$staged$files[1])),
+                                    "estimates.csv")))
+  expect_false(any(grepl("outbox", list.dirs(s$root), ignore.case = TRUE)))
+  expect_true(dir.exists(res$project_path))
+
+  # Section 9 fields and values
+  expect_setequal(names(est), estimate_schema()$field)
+  expect_true(all(est$method == "stox_sweptarea"))
+  expect_setequal(unique(est$quantity), c("biomass", "abundance"))
+  expect_equal(unique(est$unit[est$quantity == "biomass"]), "tonnes")
+  expect_equal(unique(est$unit[est$quantity == "abundance"]), "millions")
+  expect_equal(unique(est$ci_type), "bootstrap_percentile_95")
+  expect_match(unique(est$config_hash), "^[0-9a-f]{32}$")
+  expect_equal(unique(est$config_hash), config_hash(example_config()))
+  expect_match(unique(est$code_version), "RstoxFramework 4\\.2\\.1; RstoxBase 2\\.2\\.1; RstoxData 2\\.2\\.1")
+  expect_match(unique(est$code_version), "template sweptarea [0-9.]+$")
+  expect_true(all(est$value > 0))
+
+  # The baseline estimate equals the direct design-based estimate, which uses
+  # the same stations: the planted pelagic, aborted and zero-distance stations
+  # are therefore excluded.
+  for (sp in sv_species <- s$sv$design$species$species_code) {
+    direct <- direct_biomass(s$sv, sp)
+    got <- est[est$species_code == sp & est$quantity == "biomass" & est$stratum != "total", ]
+    # StoX reports no row for a stratum where the species was not caught
+    expect_equal(got$value, as.numeric(direct[got$stratum]), tolerance = 1e-6)
+    expect_true(all(direct[setdiff(names(direct), got$stratum)] == 0))
+    tot <- est$value[est$species_code == sp & est$quantity == "biomass" & est$stratum == "total"]
+    expect_equal(tot, sum(direct), tolerance = 1e-6)
+  }
+
+  # Support table: the 45 design stations (of 54 in the file) were used
+  sup <- res$support
+  expect_equal(sum(sup$n_stations[sup$species_code == "SYN001"]), 45L)
+  expect_equal(sum(sup$n_stations[sup$species_code == "SYN001"]),
+               inclusion_summary(example_config(), root = s$root)$rules$n_after[4])
+})
+
+test_that("recovered distances and includeintotal reach the StoX project", {
+  skip_if_no_stox()
+  s <- synthetic_root(excluded = c(zero_distance = 2))
+  # (1) two stations with a zero distance are used when positions can recover it
+  cfg <- quick_config(2L)
+  cfg$inclusion$distance_recovery <- "log_or_positions"
+  res <- suppressWarnings(run_estimate(cfg, root = s$root,
+                                       staging_dir = file.path(s$root, "staging")))
+  expect_equal(sum(res$support$n_stations[res$support$species_code == "SYN001"]), 47L)
+  expect_equal(res$staged$outcome, "pass")
+
+  # (2) a stratum flagged includeintotal = false is left out of the total only
+  wkt <- sf::st_as_text(sf::st_geometry(s$sv$strata))
+  include <- c("true", "true", "true", "false")
+  values <- unlist(lapply(seq_along(wkt), function(i) c(
+    sprintf('      <value polygonkey="%s" polygonvariable="includeintotal">%s</value>',
+            s$sv$strata$stratum[i], include[i]),
+    sprintf('      <value polygonkey="%s" polygonvariable="polygon">%s</value>',
+            s$sv$strata$stratum[i], wkt[i])
+  )))
+  dir.create(file.path(s$root, "stox_official", "synthetic", "process"), recursive = TRUE)
+  writeLines(c('<?xml version="1.0" encoding="UTF-8"?>',
+               '<project xmlns="http://www.imr.no/formats/stox/v1">',
+               '  <processdata>', '    <stratumpolygon>', values, '    </stratumpolygon>',
+               '  </processdata>', '</project>'),
+             file.path(s$root, "stox_official", "synthetic", "process", "project.xml"))
+  cfg <- quick_config(2L)
+  cfg$data$strata <- "stox_official/synthetic/process/project.xml"
+  res <- suppressWarnings(run_estimate(cfg, root = s$root,
+                                       staging_dir = file.path(s$root, "staging2")))
+  b <- res$estimates[res$estimates$species_code == "SYN001" & res$estimates$quantity == "biomass", ]
+  by <- setNames(b$value, b$stratum)
+  expect_equal(by[["total"]], sum(by[c("SYN-A", "SYN-B", "SYN-C")]), tolerance = 1e-6)
+  expect_lt(by[["total"]], sum(by[c("SYN-A", "SYN-B", "SYN-C", "SYN-D")]))
+})
+
+test_that("run_estimate() refuses what it cannot do, with sanitised errors", {
+  s <- synthetic_root()
+  cfg <- quick_config()
+  door <- cfg
+  door$swept_width$method <- "trawldoorspread"
+  expect_error(run_estimate(door, root = s$root), "SX-CFG-01")
+
+  skip_if_no_stox()
+  old <- cfg
+  old$stox$version <- "9.9.9"
+  expect_error(run_estimate(old, root = s$root), "SX-STOX-02")
+
+  # the same file twice gives non-unique serial numbers: refused, not guessed
+  dup <- cfg
+  dup$data$biotic <- rep(dup$data$biotic, 2)
+  err <- tryCatch(run_estimate(dup, root = s$root), error = function(e) e)
+  expect_s3_class(err, "nansenbiomass_error")
+  expect_match(conditionMessage(err), "SX-KEY-01")
+  expect_false(grepl("[0-9]{5}", conditionMessage(err)))
+})

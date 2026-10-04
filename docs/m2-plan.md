@@ -11,7 +11,7 @@ this file, then continue from **Next step** below.
 | Phase 0. Environment and dependencies | Done (4 October 2026): `nansenbiomass-m1` built from the current `cloud/setup.sh`; StoX 4.2 installed as pinned; `R CMD check` Status: OK with 321 tests, in a fresh session there |
 | Phase 1. Official setup (structure script) | `describe_stox_project()` ready (StoX 2.7 `project.xml` and StoX 3+ `project.json`); waiting for the laptop run on the official projects |
 | Phase 2. Configuration and entry point | Done except `run_estimate()`, moved to Phase 3 where it can run StoX: `read_config()`, `validate_config()`, `config_hash()`, `inclusion_summary()`; synthetic excluded stations (brought forward from Phase 5); example in `inst/configs/synthetic-example.yml` |
-| Phase 3. StoX template and runner | Spike done (4 October 2026; findings below); package code waits for three decisions (see "Phase 3 spike") |
+| Phase 3. StoX template and runner | Done in the cloud (4 October 2026): template, builder, runner, report conversion, support table and `run_estimate()`; synthetic tests pass (below). Not yet run on the laptop |
 | Phase 4. Outputs and the airlock | Not started |
 | Phase 5. Synthetic tests | Not started |
 | Phase 6. Reproduction on the laptop (D-11) | Not started |
@@ -169,11 +169,69 @@ findings are these.
   layout for conditional translations needs one more iteration against the documentation
   before distance recovery (and option (b)) can be relied on.
 
-**Next step.** Phase 3, in a new session in `nansenbiomass-m1`, once the project lead has
-decided the three points above (inclusion filter by station keys; biomass and abundance as
-two branches; how to treat door spread). The project lead runs `describe_stox_project()` on
-the official projects and shares the reviewed output; it settles the swept-width question
-and the catch-handling settings.
+**Decisions on the spike (4 October 2026, project lead).** (a) The swept width is a fixed
+value in M2; `swept_width.method: trawldoorspread` is refused by `run_estimate()` with
+`SX-CFG-01`. (b) The inclusion filter is built from the kept stations' keys, with a count
+check after the run. (c) Biomass and abundance stay two baseline branches; the choice lives
+in the template, so changing it later means a new template version (recorded in
+`code_version`), not a rewrite.
+
+**Phase 3 as built (4 October 2026).**
+
+- `inst/stox/sweptarea/template.json` (version 1.0.0): the chain, as data. `R/stox_project.R`
+  fills it and builds the project with `createProject()` and `addProcess()`; `R/stox_report.R`
+  converts the reports and builds the support table; `run_estimate()` is in
+  `R/stox_sweptarea.R`. `data.table` was added to Suggests (already a dependency of the StoX
+  packages); no other new dependency.
+- `apply_inclusion()` is the single source of which stations are kept;
+  `inclusion_summary()` reports counts from it and the project filter uses its keys. After
+  the run, StoX's retained haul count must equal the kept count (`SX-INC-03`), and kept
+  stations must have a positive distance in the project (`SX-DIST-01`). Serial numbers must
+  be unique across the biotic files (`SX-KEY-01`) and catch samples must have unique keys
+  (`SX-KEY-02`): the survey is refused, not repaired.
+- Recovered distances reach StoX through a translation of `EffectiveTowDistance` (table
+  columns named `EffectiveTowDistance`, `NewValue`, `HaulKey`); the biotic files are not
+  altered.
+- Totals are grouped by `Survey`: strata outside the survey definition (`includeintotal =
+  false`) carry no label and drop out. A report `Filter` acts after grouping, so a stratum
+  filter cannot make a total.
+- The Section 9 `value` is the baseline estimate; `cv` is the bootstrap SD over the
+  bootstrap mean; the interval is the 2.5% to 97.5% bootstrap percentiles. Biomass is in
+  tonnes and abundance in millions. A stratum where a species was not caught has no row (StoX
+  reports none); the total is unaffected. Whether to zero-fill is open (below).
+- Fixed in the template and not yet configurable: `RaisingFactorPriority = Weight`; bootstrap
+  on one core; the same seed for both resampled processes.
+- The synthetic generator now writes `catchproducttype`, `sampleproducttype`,
+  `individualproducttype` (1), `lengthmeasurement` (E) and `lengthresolution` (1).
+
+**Verification in the cloud (4 October 2026).** On the synthetic example (seed 1; 3 pelagic, 2
+aborted and 2 zero-distance stations planted), the StoX baseline biomass equals a direct
+swept-area calculation in R from the same tables, for every species, stratum and the total
+(relative difference below 1e-6). The disclosure check passes and the export is staged. The
+total for the common species is below the true biomass (about 16,200 t against 21,400 t in the
+first run; one stratum differs by a third), which the independent calculation attributes to
+sampling error at 45 stations and not to the pipeline; the formal truth-recovery test, with
+enough replicates for a stable interval, is Phase 5. `testthat::test_local()`: `[ FAIL 0 |
+WARN 0 | SKIP 0 | PASS 362 ]`; `R CMD check --no-manual` (in the scratchpad): `Status: OK`.
+Running time: about 45 seconds with 10 bootstrap replicates; 100 replicates took about five
+minutes on one core, so real runs with many replicates will take correspondingly longer.
+
+**Limits to keep in view.**
+
+- The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
+  On real files the count check (`SX-INC-03`) is what guards this assumption; it has not yet
+  been exercised on real data.
+- The 2.7 `includeintotal` flag was tested with a synthetic `project.xml`, not an official one.
+- Catch parts, raising factors and missing catch weights follow StoX's defaults
+  (`RaisingFactorPriority = Weight`), not yet the official projects' settings.
+
+**Next step.** Phase 4 (outputs and the airlock: much of it exists through `run_estimate()`;
+what remains is the review of the staged output and the support-table rules on real data),
+then Phase 5 (truth recovery with enough replicates, and the `synth` polygon export). On the
+laptop: `testthat::test_local()`, then `run_estimate()` on one survey with `distance_recovery:
+none`, comparing the retained station count with `inclusion_summary()`. The project lead runs
+`describe_stox_project()` on the official projects and shares the reviewed output; it settles
+the swept width, catch handling and raising settings.
 
 **Zero distances and strata (4 October 2026, project lead).** Stations with a zero or
 missing towed distance are always flagged by `inclusion_summary()`, with the number whose
@@ -405,6 +463,9 @@ and the bootstrap settings (D-10).
   cover the latest strata are treated (area restricted to sampled strata, flagged, or
   excluded). This changes what "reconstruction" produces (Section 1) and touches D-05, so it
   needs the project lead's decision and probably a new entry in Section 15.
+- **Strata without a catch.** Whether Section 9 should carry explicit zero rows for a species
+  that was not caught in a stratum (StoX reports none), and how the disclosure rules treat a
+  missing cell; the airlock already accepts a cell with no positive stations.
 - **D-11 and the version gap.** Whether a StoX 2.7 versus 4.x difference that we can
   explain but cannot remove is acceptable under D-11. That is your decision once we see
   the size of the difference.

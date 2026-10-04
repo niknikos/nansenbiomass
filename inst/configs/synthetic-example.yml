@@ -20,7 +20,7 @@ inclusion:
   # Zero or missing distances: none (exclude), log, or log_or_positions
   distance_recovery: none
 swept_width:
-  method: trawldoorspread
+  method: fixed
   fixed_m: 20
 species: [SYN001, SYN002, SYN003]
 quantities: [biomass, abundance]

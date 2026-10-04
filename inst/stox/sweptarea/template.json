@@ -1,0 +1,442 @@
+{
+ "template": "sweptarea",
+ "template_version": "1.0.0",
+ "stox_version": "4.2.1",
+ "description": "StoX swept-area chain: biomass from catch weight and abundance from length distributions (two branches), one PSU per station, bootstrap of PSUs within strata. Structure only (class C3); filled from a survey configuration by the package, never edited by hand.",
+ "processes": [
+  {
+   "model": "baseline",
+   "name": "ReadBiotic",
+   "function": "RstoxData::ReadBiotic",
+   "parameters": {
+    "FileNames": "{{biotic_files}}"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "StoxBiotic",
+   "function": "RstoxData::StoxBiotic",
+   "inputs": {
+    "BioticData": "ReadBiotic"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "Translation",
+   "function": "RstoxData::DefineTranslation",
+   "parameters": {
+    "DefinitionMethod": "Table",
+    "VariableName": "EffectiveTowDistance",
+    "Conditional": true,
+    "ConditionalVariableNames": "HaulKey",
+    "TranslationTable": "{{translation_table}}"
+   },
+   "when": "distance_translation"
+  },
+  {
+   "model": "baseline",
+   "name": "TranslateStoxBiotic",
+   "function": "RstoxData::TranslateStoxBiotic",
+   "inputs": {
+    "StoxBioticData": "StoxBiotic",
+    "Translation": "Translation"
+   },
+   "parameters": {
+    "TranslationDefinition": "FunctionInput"
+   },
+   "when": "distance_translation"
+  },
+  {
+   "model": "baseline",
+   "name": "FilterStoxBiotic",
+   "function": "RstoxData::FilterStoxBiotic",
+   "inputs": {
+    "StoxBioticData": "{{stoxbiotic_process}}"
+   },
+   "parameters": {
+    "FilterExpression": "{{filter_expression}}",
+    "FilterUpwards": true
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "StratumPolygon",
+   "function": "RstoxBase::DefineStratumPolygon",
+   "parameters": {
+    "DefinitionMethod": "ResourceFile",
+    "FileName": "{{strata_file}}",
+    "StratumNameLabel": "{{stratum_label}}"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "Survey",
+   "function": "RstoxBase::DefineSurvey",
+   "inputs": {
+    "StratumPolygon": "StratumPolygon"
+   },
+   "parameters": {
+    "DefinitionMethod": "{{survey_method}}",
+    "SurveyTable": "{{survey_table}}"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "BioticPSU",
+   "function": "RstoxBase::DefineBioticPSU",
+   "inputs": {
+    "StratumPolygon": "StratumPolygon",
+    "StoxBioticData": "FilterStoxBiotic"
+   },
+   "parameters": {
+    "DefinitionMethod": "StationToPSU"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "BioticLayer",
+   "function": "RstoxBase::DefineBioticLayer",
+   "inputs": {
+    "StoxBioticData": "FilterStoxBiotic"
+   },
+   "parameters": {
+    "DefinitionMethod": "WaterColumn"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "LengthDistribution",
+   "function": "RstoxBase::LengthDistribution",
+   "inputs": {
+    "StoxBioticData": "FilterStoxBiotic"
+   },
+   "parameters": {
+    "LengthDistributionType": "Normalized",
+    "RaisingFactorPriority": "{{raising_factor_priority}}"
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "baseline",
+   "name": "SumLengthDistribution",
+   "function": "RstoxBase::SumLengthDistribution",
+   "inputs": {
+    "LengthDistributionData": "LengthDistribution",
+    "BioticLayer": "BioticLayer"
+   },
+   "parameters": {
+    "LayerDefinition": "FunctionInput"
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "baseline",
+   "name": "MeanLengthDistribution",
+   "function": "RstoxBase::MeanLengthDistribution",
+   "inputs": {
+    "SumLengthDistributionData": "SumLengthDistribution",
+    "BioticLayer": "BioticLayer",
+    "Survey": "Survey",
+    "BioticPSU": "BioticPSU"
+   },
+   "parameters": {
+    "LayerDefinition": "PreDefined",
+    "SurveyDefinition": "FunctionInput",
+    "PSUDefinition": "FunctionInput"
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "baseline",
+   "name": "AbundanceDensity",
+   "function": "RstoxBase::SweptAreaDensity",
+   "inputs": {
+    "MeanLengthDistributionData": "MeanLengthDistribution"
+   },
+   "parameters": {
+    "SweptAreaDensityMethod": "LengthDistributed",
+    "SweepWidthMethod": "Constant",
+    "SweepWidth": "{{sweep_width_m}}",
+    "DensityType": "AreaNumberDensity"
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "baseline",
+   "name": "MeanAbundanceDensity",
+   "function": "RstoxBase::MeanDensity",
+   "inputs": {
+    "DensityData": "AbundanceDensity"
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "baseline",
+   "name": "SpeciesCategoryCatch",
+   "function": "RstoxBase::SpeciesCategoryCatch",
+   "inputs": {
+    "StoxBioticData": "FilterStoxBiotic"
+   },
+   "parameters": {
+    "SpeciesCategoryCatchType": "Normalized"
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "baseline",
+   "name": "SumSpeciesCategoryCatch",
+   "function": "RstoxBase::SumSpeciesCategoryCatch",
+   "inputs": {
+    "SpeciesCategoryCatchData": "SpeciesCategoryCatch",
+    "BioticLayer": "BioticLayer"
+   },
+   "parameters": {
+    "LayerDefinition": "FunctionInput"
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "baseline",
+   "name": "MeanSpeciesCategoryCatch",
+   "function": "RstoxBase::MeanSpeciesCategoryCatch",
+   "inputs": {
+    "SumSpeciesCategoryCatchData": "SumSpeciesCategoryCatch",
+    "BioticLayer": "BioticLayer",
+    "Survey": "Survey",
+    "BioticPSU": "BioticPSU"
+   },
+   "parameters": {
+    "LayerDefinition": "PreDefined",
+    "SurveyDefinition": "FunctionInput",
+    "PSUDefinition": "FunctionInput"
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "baseline",
+   "name": "BiomassDensity",
+   "function": "RstoxBase::SweptAreaDensity",
+   "inputs": {
+    "MeanSpeciesCategoryCatchData": "MeanSpeciesCategoryCatch"
+   },
+   "parameters": {
+    "SweptAreaDensityMethod": "TotalCatch",
+    "SweepWidthMethod": "Constant",
+    "SweepWidth": "{{sweep_width_m}}",
+    "DensityType": "AreaWeightDensity"
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "baseline",
+   "name": "MeanBiomassDensity",
+   "function": "RstoxBase::MeanDensity",
+   "inputs": {
+    "DensityData": "BiomassDensity"
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "baseline",
+   "name": "StratumArea",
+   "function": "RstoxBase::StratumArea",
+   "inputs": {
+    "StratumPolygon": "StratumPolygon"
+   },
+   "parameters": {
+    "AreaMethod": "Accurate"
+   }
+  },
+  {
+   "model": "baseline",
+   "name": "Abundance",
+   "function": "RstoxBase::Quantity",
+   "inputs": {
+    "MeanDensityData": "MeanAbundanceDensity",
+    "StratumAreaData": "StratumArea"
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "baseline",
+   "name": "Biomass",
+   "function": "RstoxBase::Quantity",
+   "inputs": {
+    "MeanDensityData": "MeanBiomassDensity",
+    "StratumAreaData": "StratumArea"
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "analysis",
+   "name": "Bootstrap",
+   "function": "RstoxFramework::Bootstrap",
+   "parameters": {
+    "BootstrapMethodTable": "{{bootstrap_method_table}}",
+    "NumberOfBootstraps": "{{replicates}}",
+    "OutputProcesses": "{{output_processes}}",
+    "NumberOfCores": 1
+   }
+  },
+  {
+   "model": "report",
+   "name": "ReportBiomassByStratum",
+   "function": "RstoxBase::ReportQuantity",
+   "inputs": {
+    "QuantityData": "Biomass"
+   },
+   "parameters": {
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBiomassTotal",
+   "function": "RstoxBase::ReportQuantity",
+   "inputs": {
+    "QuantityData": "Biomass"
+   },
+   "parameters": {
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapBiomassByStratum",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "Biomass",
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapBiomassTotal",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "Biomass",
+    "TargetVariable": "Biomass",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "biomass"
+  },
+  {
+   "model": "report",
+   "name": "ReportAbundanceByStratum",
+   "function": "RstoxBase::ReportQuantity",
+   "inputs": {
+    "QuantityData": "Abundance"
+   },
+   "parameters": {
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportAbundanceTotal",
+   "function": "RstoxBase::ReportQuantity",
+   "inputs": {
+    "QuantityData": "Abundance"
+   },
+   "parameters": {
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ]
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapAbundanceByStratum",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "Abundance",
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Stratum",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "abundance"
+  },
+  {
+   "model": "report",
+   "name": "ReportBootstrapAbundanceTotal",
+   "function": "RstoxFramework::ReportBootstrap",
+   "inputs": {
+    "BootstrapData": "Bootstrap"
+   },
+   "parameters": {
+    "BaselineProcess": "Abundance",
+    "TargetVariable": "Abundance",
+    "ReportFunction": "sum",
+    "GroupingVariables": [
+     "Survey",
+     "SpeciesCategory"
+    ],
+    "BootstrapReportFunction": "summaryStox",
+    "Percentages": [
+     2.5,
+     97.5
+    ]
+   },
+   "when": "abundance"
+  }
+ ]
+}

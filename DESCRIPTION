@@ -27,6 +27,7 @@ Imports:
     xml2,
     yaml
 Suggests:
+    data.table,
     RstoxBase (>= 2.2.1),
     RstoxData (>= 2.2.1),
     RstoxFramework (>= 4.2.1),

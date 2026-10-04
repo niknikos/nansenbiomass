@@ -491,3 +491,151 @@ print.nb_inclusion <- function(x, ...) {
   print(x$by_stratum, n = Inf)
   invisible(x)
 }
+
+# ---- The entry point -----------------------------------------------------------
+
+# Writes StoX's console messages (which can carry file locations) to the run's
+# local log instead of the console.
+log_stox_messages <- function(expr, log_file) {
+  withCallingHandlers(expr, message = function(m) {
+    nb_log(log_file, "message", m)
+    invokeRestart("muffleMessage")
+  })
+}
+
+# Pelagic or otherwise non-unique serial numbers would make the key-list filter
+# ambiguous: refuse rather than guess.
+check_station_keys <- function(survey) {
+  if (anyDuplicated(survey$station$serialnumber) > 0L) {
+    nb_abort("SX-KEY-01", paste("Serial numbers are not unique across the biotic files, so the stations",
+                                "to keep cannot be identified for StoX."))
+  }
+  if (anyDuplicated(survey$catch[c("serialnumber", "catchsampleid")]) > 0L) {
+    nb_abort("SX-KEY-02", "Catch samples with duplicated keys: the survey is refused, not repaired (M1 record).")
+  }
+  invisible(TRUE)
+}
+
+#' Run a StoX swept-area estimate for one survey
+#'
+#' The single entry point of the `stox_sweptarea` module. It reads the
+#' configuration, applies the inclusion rules (the same as
+#' [inclusion_summary()]), builds a StoX project from the versioned template
+#' under `<root>/stox/<survey>/<run>/`, runs the baseline and the bootstrap
+#' headless through RstoxFramework, converts the reports to the Section 9 schema
+#' (biomass in tonnes and abundance in millions, by stratum and in total), builds
+#' the support table and stages both with [stage_export()]. Nothing is written to
+#' `outbox/`: a person reviews the staged files and releases them.
+#'
+#' In this version the swept width is a fixed value (`swept_width.method:
+#' fixed`): StoX 4.2.1 does not take a haul-specific door spread through
+#' its swept-area density, so `trawldoorspread` is refused with a message.
+#' Biomass comes from catch weights and abundance from length distributions, as
+#' two branches of the StoX chain (template `sweptarea`). Every step runs under
+#' sanitised errors, with details in `<root>/logs/`.
+#'
+#' @param config A configuration file path (the hash of the file is recorded),
+#'   or an `nb_config` from [read_config()].
+#' @inheritParams read_survey
+#' @param staging_dir The staging folder; defaults to `staging` under `root`.
+#' @return Invisibly, a list with `estimates` (Section 9 table), `support`,
+#'   `staged` (the result of [stage_export()]), `project_path` and `run_label`.
+#' @export
+#' @examples
+#' if (requireNamespace("RstoxFramework", quietly = TRUE)) {
+#'   root <- tempfile("nansen-root-")
+#'   dir.create(file.path(root, "surveys"), recursive = TRUE)
+#'   dir.create(file.path(root, "strata"))
+#'   sv <- synth_survey(synth_design(excluded = c(pelagic = 3, aborted = 2)), seed = 1)
+#'   write_biotic(sv, file.path(root, "surveys", "synthetic-seed1.xml"))
+#'   strata <- sv$strata
+#'   names(strata)[names(strata) == "stratum"] <- "StratumName"
+#'   sf::st_write(strata, file.path(root, "strata", "synthetic-strata.geojson"), quiet = TRUE)
+#'   cfg <- read_config(system.file("configs", "synthetic-example.yml",
+#'                                  package = "nansenbiomass"))
+#'   cfg$bootstrap$replicates <- 5L # few replicates, to keep the example fast
+#'   res <- suppressWarnings(run_estimate(cfg, root = root))
+#'   res$staged$outcome
+#' }
+run_estimate <- function(config, root = data_root(), staging_dir = file.path(root, "staging")) {
+  cfg <- if (inherits(config, "nb_config")) config else read_config(config)
+  hash <- attr(cfg, "config_hash")
+  if (is.null(hash)) nb_abort("CF-READ-03", "A configuration object must come from read_config().")
+  if (!identical(cfg$swept_width$method, "fixed")) {
+    nb_abort("SX-CFG-01", paste("StoX 4.2.1 takes a constant sweep width only; set",
+                                "swept_width.method to fixed (haul-specific door spread is not supported)."))
+  }
+  if (!grepl("^[A-Za-z0-9._-]+$", cfg$survey$label)) {
+    nb_abort("SX-CFG-02", "survey.label may contain only letters, digits, '.', '_' and '-'.")
+  }
+  files <- vapply(cfg$data$biotic, resolve_data_path, character(1), root = root, USE.NAMES = FALSE)
+  strata_file <- resolve_data_path(cfg$data$strata, root)
+  run_label <- paste0(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"), "-", substr(hash, 1, 8))
+  project_path <- file.path(root, "stox", cfg$survey$label, run_label)
+  log_dir <- file.path(root, "logs")
+  run_log <- file.path(log_dir, paste0("run_estimate-", run_label, ".log"))
+
+  with_sanitised_errors(
+    {
+      check_stox_ready(cfg)
+      survey <- read_biotic(files)
+      check_station_keys(survey)
+      polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
+      inc <- apply_inclusion(survey$station, cfg, polygons)
+      if (!any(inc$keep)) nb_abort("SX-INC-02", "No station is kept by the inclusion rules.")
+      st <- survey$station
+      keys <- as.character(st$serialnumber[inc$keep])
+
+      # Recovered distances reach StoX through a translation inside the project.
+      old <- st$distance
+      recovered <- inc$keep & (is.na(old) | old <= 0) & !is.na(inc$distance_used) & inc$distance_used > 0
+      translation <- if (any(recovered)) {
+        data.table::data.table(EffectiveTowDistance = as.character(old[recovered]),
+                               NewValue = as.character(inc$distance_used[recovered]),
+                               HaulKey = as.character(st$serialnumber[recovered]))
+      }
+      flag <- if ("includeintotal" %in% names(polygons)) {
+        polygons$includeintotal[match(cfg$data$stratum_names, polygons[[cfg$data$stratum_label]])]
+      } else {
+        rep(TRUE, length(cfg$data$stratum_names))
+      }
+      total_strata <- cfg$data$stratum_names[is.na(flag) | flag]
+
+      built <- build_stox_project(
+        cfg, list(biotic_files = files, strata_file = strata_file, keep_keys = keys,
+                  translation = translation, total_strata = total_strata),
+        project_path
+      )
+      r <- log_stox_messages(
+        RstoxFramework::runProject(project_path, modelNames = c("baseline", "analysis", "report"),
+                                   msg = FALSE, try = FALSE),
+        run_log
+      )
+
+      # The stations StoX kept must be the stations the rules kept.
+      hauls <- r$FilterStoxBiotic$Haul
+      if (nrow(hauls) != sum(inc$keep)) {
+        nb_abort("SX-INC-03", paste0("StoX kept ", nrow(hauls), " stations but the inclusion rules keep ",
+                                     sum(inc$keep), "."))
+      }
+      if (isTRUE(cfg$inclusion$positive_distance) &&
+          any(is.na(hauls$EffectiveTowDistance) | hauls$EffectiveTowDistance <= 0)) {
+        nb_abort("SX-DIST-01", "Some stations kept still have a zero or missing distance in the StoX project.")
+      }
+
+      cv <- code_version_string(built$template_version)
+      estimates <- stox_reports_to_estimates(r, cfg, hash, cv)
+      support <- stox_support_table(survey, inc$keep, inc$stratum, cfg)
+      staged <- stage_export(estimates, support, cfg$data$stratum_names,
+                             run_label = paste0(cfg$survey$label, "-", run_label),
+                             min_stations = cfg$disclosure$min_stations,
+                             min_positive = cfg$disclosure$min_positive,
+                             staging_dir = staging_dir)
+      invisible(list(estimates = estimates, support = support, staged = staged,
+                     project_path = project_path, run_label = run_label))
+    },
+    log_dir = log_dir,
+    code = "SX-RUN-01",
+    message = "The estimate could not be completed."
+  )
+}
