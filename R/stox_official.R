@@ -78,7 +78,7 @@ parse_station_exclusions <- function(expr) {
 #'       processName = "FilterStoxBiotic", functionName = "RstoxData::FilterStoxBiotic",
 #'       functionParameters = list(FilterExpression = list(
 #'         Station = paste0("Station %notin% c('", keys[1], "', '", keys[2], "')")))
-#'     )))), file.path(root, "official", "process", "project.json"), auto_unbox = TRUE)
+#'     ))))), file.path(root, "official", "process", "project.json"), auto_unbox = TRUE)
 #'   stox_station_exclusions("official", "surveys/synthetic-seed1.xml",
 #'                           "exclusions/synthetic.txt", root = root)
 #' }
