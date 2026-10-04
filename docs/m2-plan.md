@@ -413,15 +413,27 @@ file with full precision in the project folder), and the station counts, the sup
 the airlock use the selection only. A listed stratum that is not in the file is refused (`SX-STRATA-05`), as
 is a selection that matches nothing (`SX-STRATA-03`).
 
-**Selected strata that are not sampled (4 October 2026, project lead).** The selection defines the strata
-of the estimate; it does not depend on which of them were sampled. A selected stratum with no station kept is
-not dropped: `run_estimate()` keeps one row for it per species and quantity, with `value` NA (and no CV or
-interval), and prints one message with the number of such strata. A sampled stratum without catch of a
-species still has no row, as before (see the open question below). Interpretation to keep in view: StoX's total sums the strata that
-have an estimate, so with an unsampled stratum the total covers the sampled part of the area only; it is
-not an estimate for the whole selected area. The staged export carries only cells with a value (nothing is
-released for an unsampled stratum), the support table keeps the zero counts, and the open question on
-strata without a catch (below) stays open for how Section 9 should treat NA cells.
+**Selected strata that are not sampled, and species not caught (4 October 2026, project lead).** The
+selection defines the strata of the estimate; it does not depend on which of them were sampled. A selected
+stratum with no station kept is not dropped: `run_estimate()` keeps one row for it per species and quantity,
+with `value` NA (and no CV or interval), and prints one message with the number of such strata. A sampled
+stratum in which a species was not caught is a zero: StoX returns no row for it, and the table now carries
+one with `value` 0, an interval of 0 and no CV (also for the total when a species is never caught in the
+sampled strata). The total stays as StoX computes it, the sum over the strata that have an estimate; it is
+not made NA when a stratum is unsampled (decision of the project lead), which means that it covers the
+sampled part of the area only, and that should be kept in view when comparing with published figures. The
+staged export carries only cells with a value (nothing is released for an unsampled stratum), and the
+support table keeps the zero counts.
+
+**Selecting the surveyed regions from the stations (4 October 2026).** The surveyed EEZ(s) can be read from
+where the stations are. `data.stratum_regions` is a regular expression with one capture group that gives the
+region of a stratum name (for the depth-band names of the first survey, `^(.*)_[0-9]+-[0-9]+m$`). Stations
+are assigned to strata and pass the other inclusion rules; every stratum of a region in which at least one
+station is kept is selected, so a depth band that was not sampled stays in (as NA) and a region with no
+station is out. It can be combined with `stratum_names` and `stratum_pattern` (union). A pattern that does
+not describe every stratum name is refused (`SX-STRATA-07`). The rule rests on one assumption that the
+person should check in the counts: a stray station (for example on a transit) in another region would bring
+that region in; `inclusion_summary()` shows the strata and the stations kept in each.
 
 **Limits to keep in view.**
 

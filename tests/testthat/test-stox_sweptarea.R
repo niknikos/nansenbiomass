@@ -372,7 +372,7 @@ test_that("run_estimate() reproduces the direct estimate and stages a passing ex
   expect_equal(unique(est$config_hash), config_hash(example_config()))
   expect_match(unique(est$code_version), "RstoxFramework 4\\.2\\.1; RstoxBase 2\\.2\\.1; RstoxData 2\\.2\\.1")
   expect_match(unique(est$code_version), "template sweptarea 2\\.1\\.0$")
-  expect_true(all(est$value > 0))
+  expect_true(all(est$value >= 0))
 
   # The baseline estimate equals the direct design-based estimate, which uses
   # the same stations: the planted pelagic, aborted and zero-distance stations
@@ -380,9 +380,9 @@ test_that("run_estimate() reproduces the direct estimate and stages a passing ex
   for (sp in sv_species <- s$sv$design$species$species_code) {
     direct <- direct_biomass(s$sv, sp)
     got <- est[est$species_code == sp & est$quantity == "biomass" & est$stratum != "total", ]
-    # StoX reports no row for a stratum where the species was not caught
+    # a sampled stratum where the species was not caught is a zero
     expect_equal(got$value, as.numeric(direct[got$stratum]), tolerance = 1e-6)
-    expect_true(all(direct[setdiff(names(direct), got$stratum)] == 0))
+    expect_setequal(got$stratum, s$sv$design$strata$stratum)
     tot <- est$value[est$species_code == sp & est$quantity == "biomass" & est$stratum == "total"]
     expect_equal(tot, sum(direct), tolerance = 1e-6)
   }
@@ -680,7 +680,7 @@ test_that("biomass through super-individuals agrees with the catch-weight route"
   bt <- m[m$quantity == "biomass" & m$stratum == "total", ]
   expect_true(all(abs(bt$value.si / bt$value.catch - 1) < 0.05))
   # and within 10 per cent in every stratum
-  bs <- m[m$quantity == "biomass" & m$stratum != "total", ]
+  bs <- m[m$quantity == "biomass" & m$stratum != "total" & m$value.catch > 0, ]
   expect_true(all(abs(bs$value.si / bs$value.catch - 1) < 0.10))
 })
 
@@ -894,7 +894,7 @@ test_that("a copy of a project reproduces our estimates and the original is left
   expect_true(length(run$reports) >= 4L)
   expect_false(is.null(run$reference))
   # same engine and same input: the baseline values are ours
-  with_value <- res$estimates[!is.na(res$estimates$value), ]
+  with_value <- res$estimates[!is.na(res$estimates$value) & res$estimates$value > 0, ]
   cmp <- compare_estimates(with_value, official_reports_to_table(run$reports), "baseline")
   expect_equal(nrow(cmp), nrow(with_value))
   expect_equal(cmp$ratio, rep(1, nrow(cmp)), tolerance = 1e-9)
@@ -1131,6 +1131,40 @@ test_that("only the selected strata are counted: stations elsewhere are left out
   all <- inclusion_summary(quick_config(), root = s$root)
   expect_false(any(grepl("selected of", all$rules$rule)))
   expect_equal(nrow(all$by_stratum), 4L)
+})
+
+test_that("regions of strata are selected from the stations, with unsampled strata kept in", {
+  s <- synthetic_root()
+  strata <- sf::st_read(file.path(s$root, "strata", "synthetic-strata.geojson"), quiet = TRUE)
+  strata$StratumName <- c("N_50-100m", "N_100-200m", "S_50-100m", "S_100-200m")[
+    match(strata$StratumName, c("SYN-A", "SYN-B", "SYN-C", "SYN-D"))]
+  sf::st_write(strata, file.path(s$root, "strata", "synthetic-strata.geojson"),
+               delete_dsn = TRUE, quiet = TRUE)
+  cfg <- quick_config()
+  cfg$data$stratum_names <- NULL
+  cfg$data$stratum_regions <- "^(.*)_[0-9]+-[0-9]+m$"
+  # stations in every region: all strata
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_equal(nrow(inc$by_stratum), 4L)
+  # all stations of the S_100 stratum excluded: the region S is still surveyed, so S_100 stays
+  d <- s$sv$stations[s$sv$stations$design_station & s$sv$stations$stratum == "SYN-D", ]
+  dir.create(file.path(s$root, "exclusions"))
+  writeLines(as.character(d$serialnumber), file.path(s$root, "exclusions", "d.txt"))
+  cfg$inclusion$exclude_stations_file <- "exclusions/d.txt"
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_setequal(inc$by_stratum$stratum, c("N_50-100m", "N_100-200m", "S_50-100m", "S_100-200m"))
+  expect_equal(inc$by_stratum$n_kept[inc$by_stratum$stratum == "S_100-200m"], 0L)
+  # no station kept in region S: its strata are not selected
+  c1 <- s$sv$stations[s$sv$stations$design_station & s$sv$stations$stratum %in% c("SYN-C", "SYN-D"), ]
+  writeLines(as.character(c1$serialnumber), file.path(s$root, "exclusions", "d.txt"))
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_setequal(inc$by_stratum$stratum, c("N_50-100m", "N_100-200m"))
+  # a pattern that does not describe every stratum name is refused
+  cfg$data$stratum_regions <- "^(N)_[0-9]+-[0-9]+m$"
+  expect_error(inclusion_summary(cfg, root = s$root), "SX-STRATA-07|SX-INC-01")
+  raw <- yaml::read_yaml(example_config())
+  raw$data$stratum_regions <- "no group"
+  expect_error(validate_config(raw), "CF-VAL-01")
 })
 
 test_that("a selected stratum that is not sampled stays in the estimates with an NA value", {

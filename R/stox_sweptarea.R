@@ -512,7 +512,7 @@ station_strata <- function(station, polygons, label) {
 # `data.stratum_pattern`, else all strata of the polygon file (in file order). The
 # result is written back to `cfg$data$stratum_names`, so that everything downstream
 # (station counts, support table, totals, airlock) uses the selection only.
-resolve_strata_names <- function(cfg, polygons) {
+resolve_strata_names <- function(cfg, polygons, st = NULL, exclude = NULL) {
   label <- cfg$data$stratum_label
   if (!label %in% names(polygons)) {
     nb_abort("SX-STRATA-02", "The stratum polygons have no attribute named by data.stratum_label.")
@@ -521,7 +521,8 @@ resolve_strata_names <- function(cfg, polygons) {
   in_file <- in_file[!is.na(in_file)]
   explicit <- cfg$data$stratum_names
   pattern <- cfg$data$stratum_pattern
-  if (is.null(explicit) && is.null(pattern)) {
+  regions <- cfg$data$stratum_regions
+  if (is.null(explicit) && is.null(pattern) && is.null(regions)) {
     chosen <- in_file
   } else {
     chosen <- character(0)
@@ -533,13 +534,33 @@ resolve_strata_names <- function(cfg, polygons) {
       chosen <- explicit
     }
     if (!is.null(pattern)) chosen <- union(chosen, grep(pattern, in_file, value = TRUE))
+    if (!is.null(regions)) {
+      if (is.null(st)) nb_abort("SX-STRATA-06", "Selecting regions from the stations needs the stations.")
+      # The regions in which stations are kept by the other rules; all strata of those regions are selected
+      probe <- cfg
+      probe$data$stratum_names <- in_file
+      attr(probe, "n_strata_in_file") <- length(in_file)
+      inc <- apply_inclusion(st, probe, polygons, exclude)
+      region_of <- function(x) {
+        m <- regmatches(x, regexec(regions, x, perl = TRUE))
+        vapply(m, function(e) if (length(e) == 2L) e[[2L]] else NA_character_, character(1))
+      }
+      if (anyNA(region_of(in_file))) {
+        nb_abort("SX-STRATA-07", "data.stratum_regions does not match every stratum name.")
+      }
+      surveyed <- unique(region_of(unique(inc$stratum[inc$keep & !is.na(inc$stratum)])))
+      chosen <- union(chosen, in_file[region_of(in_file) %in% surveyed])
+      attr(cfg, "regions_surveyed") <- surveyed
+    }
     chosen <- in_file[in_file %in% chosen]
   }
   if (length(chosen) == 0L || any(chosen == "total")) {
     nb_abort("SX-STRATA-03", "No usable stratum is selected.")
   }
+  surveyed <- attr(cfg, "regions_surveyed")
   cfg$data$stratum_names <- chosen
   attr(cfg, "n_strata_in_file") <- length(in_file)
+  if (!is.null(surveyed)) attr(cfg, "regions_surveyed") <- surveyed
   cfg
 }
 
@@ -640,8 +661,9 @@ inclusion_summary <- function(config, root = data_root()) {
     {
       survey <- read_biotic(files)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
-      cfg <- resolve_strata_names(cfg, polygons)
-      inclusion_counts(survey$station, cfg, polygons, read_station_exclusions(cfg, root))
+      exclude <- read_station_exclusions(cfg, root)
+      cfg <- resolve_strata_names(cfg, polygons, survey$station, exclude)
+      inclusion_counts(survey$station, cfg, polygons, exclude)
     },
     log_dir = file.path(root, "logs"),
     code = "SX-INC-01",
@@ -863,8 +885,9 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       survey <- read_biotic(files)
       check_station_keys(survey)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
-      cfg <- resolve_strata_names(cfg, polygons)
-      inc <- apply_inclusion(survey$station, cfg, polygons, read_station_exclusions(cfg, root))
+      exclude <- read_station_exclusions(cfg, root)
+      cfg <- resolve_strata_names(cfg, polygons, survey$station, exclude)
+      inc <- apply_inclusion(survey$station, cfg, polygons, exclude)
       if (!any(inc$keep)) nb_abort("SX-INC-02", "No station is kept by the inclusion rules.")
       st <- survey$station
       keys <- as.character(st$serialnumber[inc$keep])

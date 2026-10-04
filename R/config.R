@@ -80,6 +80,17 @@ validate_config <- function(cfg) {
       cf_abort("CF-VAL-01", "data.stratum_pattern", "must be a valid regular expression")
     }
   }
+  # optional: select whole regions of strata from the stations. A regular expression with one
+  # capture group that gives the region of a stratum name (for example the part before the depth band)
+  reg <- cfg$data$stratum_regions
+  if (!is.null(reg)) {
+    ok <- is_string(reg) && !inherits(try(grepl(reg, "x"), silent = TRUE), "try-error") &&
+      identical(attr(regexpr(reg, "x", perl = TRUE), "capture.start") |> ncol(), 1L)
+    if (!ok) {
+      cf_abort("CF-VAL-01", "data.stratum_regions",
+               "must be a regular expression with exactly one capture group")
+    }
+  }
   # optional: the strata to estimate; without `stratum_names` and `stratum_pattern`, all strata of
   # the polygon file are used
   strata <- cfg$data$stratum_names
@@ -245,8 +256,10 @@ validate_config <- function(cfg) {
 #'   file in any format sf reads, or a StoX 2.7 `project.xml` holding the
 #'   strata), both relative to `NANSEN_DATA_ROOT`;
 #'   `stratum_label`, the polygon attribute holding stratum names (default
-#'   `StratumName`, as in StoX); and optionally `stratum_names` and `stratum_pattern`
-#'   (a regular expression) to select the strata to estimate, for example those of the
+#'   `StratumName`, as in StoX); and optionally `stratum_names`, `stratum_pattern`
+#'   (a regular expression) and `stratum_regions` (a regular expression with one capture group
+#'   giving the region of a stratum name; every stratum of a region in which at least one
+#'   station is kept is selected, so unsampled depth bands stay in) to select the strata to estimate, for example those of the
 #'   surveyed EEZs. Without either, all strata of the polygon file are used and their
 #'   names are read from it (see [stox_strata()]). Stations outside the selected strata
 #'   are left out before the StoX project is built, and nothing is estimated or reported
