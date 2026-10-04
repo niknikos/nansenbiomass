@@ -202,12 +202,16 @@ new_stox_description <- function(format, versions, rows, data_rows) {
   )
 }
 
+# A project folder holds its file in process/ (StoX's own layout) or, when only
+# the file was copied, directly in the folder.
 locate_stox_project_file <- function(target) {
   if (dir.exists(target)) {
-    candidates <- file.path(target, "process", c("project.json", "project.xml"))
+    candidates <- c(file.path(target, "process", c("project.json", "project.xml")),
+                    file.path(target, c("project.json", "project.xml")))
     hit <- candidates[file.exists(candidates)]
     if (length(hit) == 0L) {
-      nb_abort("SX-READ-02", "No process/project.json or process/project.xml in the folder.")
+      nb_abort("SX-READ-02",
+               "No project.json or project.xml in the folder or in its process/ folder.")
     }
     return(hit[1])
   }
@@ -230,8 +234,9 @@ locate_stox_project_file <- function(target) {
 #' D-10); review the output before sharing it. Errors are handled as in
 #' [read_survey()].
 #'
-#' @param path Path, relative to `root`, of a StoX project folder or of its
-#'   `project.xml` or `project.json` file.
+#' @param path Path, relative to `root`, of a StoX project folder (with its
+#'   project file in `process/` or directly in the folder) or of the
+#'   `project.xml` or `project.json` file itself.
 #' @inheritParams read_survey
 #' @return An `nb_stox_description`: a list with `format`, `versions` (StoX or
 #'   Rstox versions recorded in the project), `processes` (a tibble of model,

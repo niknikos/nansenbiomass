@@ -7,8 +7,9 @@
 describe_stox_project(path, root = data_root())
 }
 \arguments{
-\item{path}{Path, relative to \code{root}, of a StoX project folder or of its
-\code{project.xml} or \code{project.json} file.}
+\item{path}{Path, relative to \code{root}, of a StoX project folder (with its
+project file in \verb{process/} or directly in the folder) or of the
+\code{project.xml} or \code{project.json} file itself.}
 
 \item{root}{The data root. Defaults to \code{\link[=data_root]{data_root()}}.}
 }

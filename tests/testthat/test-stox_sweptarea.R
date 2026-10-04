@@ -145,6 +145,9 @@ test_that("a project file can be named directly, and wrong targets fail by code"
   write_project(root, "xml")
   d <- describe_stox_project("official/process/project.xml", root = root)
   expect_equal(d$format, "StoX 2.7 (project.xml)")
+  dir.create(file.path(root, "flat"))
+  writeLines(xml_project, file.path(root, "flat", "project.xml"))
+  expect_equal(describe_stox_project("flat", root = root)$format, "StoX 2.7 (project.xml)")
   dir.create(file.path(root, "empty"))
   code_of <- function(expr) expect_error(expr, class = "nansenbiomass_error")$nb_code
   expect_equal(code_of(describe_stox_project("empty", root = root)), "SX-READ-02")
