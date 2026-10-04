@@ -57,6 +57,12 @@ nansen_data/
 Biotic files are read from `surveys/`, never from the official projects. Reproduction
 compares checksums of a project's own input file and the archive file (yes or no), since a
 re-exported or corrected file would explain differences on its own.
+*Revised 4 October 2026 (project lead):* whole-file checksums will rarely match, because the
+taxonomy of some species was not yet resolved when the official projects were run; that does
+not affect species whose taxonomy was resolved. Reproduction therefore compares the inputs to
+the estimate instead: the stations (codes, distance, start position) and the catch weights and
+counts of the compared species, between the archive file and the project's own file, as counts
+only (a throw-away function run on the laptop; not part of the package).
 
 **Verification of `nansenbiomass-m1` (4 October 2026).** A fresh session found the setup
 logs written by the current script, including `r-stox-deps.log` and `r-stox.log` (stages the
