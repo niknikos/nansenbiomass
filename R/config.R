@@ -72,12 +72,15 @@ validate_config <- function(cfg) {
   if (!is_string(cfg$data$stratum_label)) {
     cf_abort("CF-TYPE-01", "data.stratum_label", "must name the polygon attribute holding stratum names")
   }
+  # optional: without it, the names are read from the stratum polygons when the run starts
   strata <- cfg$data$stratum_names
-  if (is.null(strata) || !is.atomic(strata) || length(strata) == 0L || anyNA(strata) ||
-      any(as.character(strata) == "total") || anyDuplicated(strata)) {
-    cf_abort("CF-TYPE-02", "data.stratum_names", "must list unique stratum names (not `total`)")
+  if (!is.null(strata)) {
+    if (!is.atomic(strata) || length(strata) == 0L || anyNA(strata) ||
+        any(as.character(strata) == "total") || anyDuplicated(strata)) {
+      cf_abort("CF-TYPE-02", "data.stratum_names", "must list unique stratum names (not `total`)")
+    }
+    cfg$data$stratum_names <- as.character(strata)
   }
-  cfg$data$stratum_names <- as.character(strata)
 
   # inclusion rules: allowed codes per field; an absent field means no restriction
   inc <- cfg$inclusion
@@ -233,7 +236,8 @@ validate_config <- function(cfg) {
 #'   file in any format sf reads, or a StoX 2.7 `project.xml` holding the
 #'   strata), both relative to `NANSEN_DATA_ROOT`;
 #'   `stratum_label`, the polygon attribute holding stratum names (default
-#'   `StratumName`, as in StoX); and `stratum_names`.
+#'   `StratumName`, as in StoX); and optionally `stratum_names` (without it, the
+#'   names are read from the polygons; see [stox_strata()]).
 #' * `inclusion`: allowed `stationtype`, `samplequality` and `gearcondition`
 #'   codes (a field left out means no restriction), `positive_distance`
 #'   (default `true`) and `distance_recovery` for zero or missing distances
@@ -304,7 +308,8 @@ config_hash <- function(path) {
 #' @export
 print.nb_config <- function(x, ...) {
   cat("<nb_config>", x$survey$label, x$survey$year, "\n")
-  cat("  biotic files:", length(x$data$biotic), " strata:", length(x$data$stratum_names), "\n")
+  cat("  biotic files:", length(x$data$biotic), " strata:",
+      if (is.null(x$data$stratum_names)) "from the polygons" else length(x$data$stratum_names), "\n")
   for (f in c("stationtype", "samplequality", "gearcondition")) {
     v <- x$inclusion[[f]]
     cat(sprintf("  inclusion %-14s %s\n", paste0(f, ":"),

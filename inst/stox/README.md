@@ -7,7 +7,7 @@ configuration in `configs/`, never edited by hand.
 
 Templates are structural (class C3): they contain no survey data.
 
-## `sweptarea/template.json` (version 2.0.0)
+## `sweptarea/template.json` (version 2.1.0)
 
 The swept-area chain for StoX 4.2 (RstoxFramework 4.2.1): an ordered list of
 processes, each with its model, StoX function, inputs and fixed parameters.
@@ -32,5 +32,7 @@ a `when` key applies only when that condition holds.
   `SweptAreaDensity`; a haul-specific door spread is not supported.
 - **Totals.** Strata outside the survey definition (`includeintotal = false`) carry
   no `Survey` label and drop out of the totals, which are grouped by `Survey`.
+- **Missing values.** The reports of the super-individual route remove missing values
+  (individuals without a weight), as the official reports do.
 - **Units.** Catch-weight biomass is in kg and super-individual biomass in grams;
   the report conversion gives tonnes.

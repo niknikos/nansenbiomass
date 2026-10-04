@@ -1,6 +1,6 @@
 {
  "template": "sweptarea",
- "template_version": "2.0.0",
+ "template_version": "2.1.0",
  "stox_version": "4.2.1",
  "description": "StoX swept-area chain. Abundance from length distributions (optionally regrouped); biomass either from catch weight (total_catch) or through super-individuals (super_individuals, as in many StoX projects); one PSU per station; bootstrap of the mean length distribution; species and station filters. Structure only (class C3); filled from a survey configuration by the package, never edited by hand.",
  "processes": [
@@ -453,7 +453,8 @@
     "GroupingVariables": [
      "Stratum",
      "SpeciesCategory"
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_biomass"
   },
@@ -476,7 +477,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_biomass"
   },
@@ -493,7 +495,8 @@
     "GroupingVariables": [
      "Survey",
      "SpeciesCategory"
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_biomass"
   },
@@ -516,7 +519,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_biomass"
   },
@@ -613,7 +617,8 @@
     "GroupingVariables": [
      "Stratum",
      "SpeciesCategory"
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_abundance"
   },
@@ -636,7 +641,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_abundance"
   },
@@ -653,7 +659,8 @@
     "GroupingVariables": [
      "Survey",
      "SpeciesCategory"
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_abundance"
   },
@@ -676,7 +683,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "RemoveMissingValues": true
    },
    "when": "si_abundance"
   }

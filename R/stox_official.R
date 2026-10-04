@@ -363,3 +363,154 @@ print.nb_comparison <- function(x, ...) {
   print(tibble::as_tibble(y), n = Inf)
   invisible(x)
 }
+
+# ---- Strata ----------------------------------------------------------------------------
+
+# GeoJSON feature collections inside a nested list (the process data of a StoX
+# project): returns the first one found as an sf object, or NULL.
+find_feature_collection <- function(x) {
+  if (!is.list(x)) return(NULL)
+  if (identical(x$type, "FeatureCollection") && length(x$features)) {
+    text <- jsonlite::toJSON(x, auto_unbox = TRUE, null = "null")
+    out <- tryCatch(suppressWarnings(sf::st_read(as.character(text), quiet = TRUE)), error = function(e) NULL)
+    if (!is.null(out)) return(out)
+  }
+  for (el in x) {
+    out <- find_feature_collection(el)
+    if (!is.null(out)) return(out)
+  }
+  NULL
+}
+
+# Reads stratum polygons from a polygon file, a StoX 2.7 project.xml, a StoX 3 or
+# later project.json (its process data), or a project folder (its saved polygon
+# output); returns the polygons and a description of where they came from.
+read_strata_any <- function(target) {
+  from_json <- function(file) {
+    j <- jsonlite::read_json(file, simplifyVector = FALSE)
+    models <- j$project$models
+    for (model in models) for (p in model) {
+      if (grepl("DefineStratumPolygon", if (is.null(p$functionName)) "" else p$functionName)) {
+        out <- find_feature_collection(p$processData)
+        if (!is.null(out)) return(out)
+      }
+    }
+    NULL
+  }
+  if (dir.exists(target)) {
+    json <- locate_stox_project_file(target)
+    if (grepl("\\.json$", json, ignore.case = TRUE)) {
+      out <- tryCatch(from_json(json), error = function(e) NULL)
+      if (!is.null(out)) return(list(polygons = out, source = "the project's process data"))
+    }
+    files <- list.files(target, pattern = "\\.(geojson|json|shp|gpkg)$", recursive = TRUE,
+                        full.names = TRUE, ignore.case = TRUE)
+    files <- files[!grepl("project\\.json$|/projectSession/", files, ignore.case = TRUE)]
+    files <- files[order(!grepl("stratum", basename(files), ignore.case = TRUE))]
+    for (f in files) {
+      out <- tryCatch(suppressWarnings(sf::st_read(f, quiet = TRUE)), error = function(e) NULL)
+      if (!is.null(out) && any(sf::st_geometry_type(out) %in% c("POLYGON", "MULTIPOLYGON"))) {
+        return(list(polygons = out, source = "a polygon file in the project folder"))
+      }
+    }
+    nb_abort("SX-STR-01", "No stratum polygons were found in the project folder.")
+  }
+  if (grepl("\\.xml$", target, ignore.case = TRUE)) {
+    return(list(polygons = read_strata_polygons(target, "stratum"), source = "a StoX 2.7 project.xml"))
+  }
+  if (grepl("project\\.json$", target, ignore.case = TRUE)) {
+    out <- from_json(target)
+    if (is.null(out)) nb_abort("SX-STR-01", "The project file holds no stratum polygons in its process data.")
+    return(list(polygons = out, source = "the project's process data"))
+  }
+  list(polygons = sf::st_read(target, quiet = TRUE), source = "a polygon file")
+}
+
+#' Read the strata of a survey from a project or a polygon file
+#'
+#' Finds the stratum polygons in a polygon file (any format sf reads), a StoX
+#' 2.7 `project.xml`, a StoX 3 or later `project.json` (its process data), or a
+#' project folder (the project file's process data, or a polygon file saved in the
+#' folder, such as the output of the stratum process), and reports the stratum
+#' names and the polygon attribute that holds them. Stratum names and polygons are
+#' not station-level data, so the names are printed. With `out`, the polygons are
+#' written to a GeoJSON file in the data zone with the names in an attribute called
+#' `stratum`, ready for `data.strata` in a survey configuration (set
+#' `data.stratum_label` to `stratum`); `data.stratum_names` can then be left out of
+#' the configuration, since the run reads the names from the polygons.
+#'
+#' @param path Path, relative to `root`, of a polygon file, a `project.xml`, a
+#'   `project.json` or a project folder.
+#' @param label The polygon attribute that holds the stratum names; `NULL` picks
+#'   one (a name such as `stratum` or `StratumName`, else the only text attribute).
+#' @param out Optional path, relative to `root`, of the GeoJSON file to write.
+#' @param overwrite Replace an existing `out` file.
+#' @inheritParams read_survey
+#' @return Invisibly, an `nb_strata` list with `source`, `label`, `names`,
+#'   `attributes` (the text attributes of the polygons) and, for a 2.7
+#'   `project.xml`, `include_in_total`.
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(file.path(root, "strata"), recursive = TRUE)
+#' sv <- synth_survey(seed = 1)
+#' strata <- sv$strata
+#' names(strata)[names(strata) == "stratum"] <- "StratumName"
+#' sf::st_write(strata, file.path(root, "strata", "synthetic.geojson"), quiet = TRUE)
+#' stox_strata("strata/synthetic.geojson", root = root)
+stox_strata <- function(path, root = data_root(), label = NULL, out = NULL, overwrite = FALSE) {
+  target <- resolve_data_path(path, root)
+  out_file <- if (is.null(out)) NULL else resolve_data_path(out, root, must_exist = FALSE)
+  if (!is.null(out_file) && file.exists(out_file) && !isTRUE(overwrite)) {
+    nb_abort("SX-STR-02", "The output file exists; use overwrite = TRUE to replace it.")
+  }
+  with_sanitised_errors(
+    {
+      found <- read_strata_any(target)
+      polygons <- found$polygons
+      geom <- attr(polygons, "sf_column")
+      text_cols <- setdiff(names(polygons), c(geom, "includeintotal"))
+      text_cols <- text_cols[vapply(text_cols, function(n) is.character(polygons[[n]]) ||
+                                      is.factor(polygons[[n]]), logical(1))]
+      if (is.null(label)) {
+        preferred <- c("stratum", "StratumName", "polygonName", "polygonKey", "name", "Name")
+        label <- c(intersect(preferred, text_cols), text_cols)[1]
+      }
+      if (is.na(label) || !label %in% names(polygons)) {
+        nb_abort("SX-STR-03", "The polygon attribute that holds the stratum names could not be found.")
+      }
+      nm <- unique(as.character(polygons[[label]]))
+      nm <- nm[!is.na(nm)]
+      include <- if ("includeintotal" %in% names(polygons)) {
+        stats::setNames(as.logical(polygons$includeintotal[match(nm, polygons[[label]])]), nm)
+      }
+      if (!is.null(out_file)) {
+        o <- polygons[c(label, if (!is.null(include)) "includeintotal")]
+        names(o)[1] <- "stratum"
+        if (is.na(sf::st_crs(o))) sf::st_crs(o) <- 4326
+        o <- sf::st_transform(o, 4326)
+        dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
+        sf::st_write(o, out_file, quiet = TRUE, delete_dsn = file.exists(out_file))
+      }
+      structure(list(source = found$source, label = label, names = nm, attributes = text_cols,
+                     include_in_total = include, written = !is.null(out_file)),
+                class = "nb_strata")
+    },
+    log_dir = file.path(root, "logs"),
+    code = "SX-STR-04",
+    message = "The strata could not be read."
+  )
+}
+
+#' @export
+print.nb_strata <- function(x, ...) {
+  cat("<nb_strata> read from", x$source, "\n")
+  cat("  polygon attribute with the names:", x$label, "\n")
+  cat("  text attributes in the polygons: ", paste(x$attributes, collapse = ", "), "\n")
+  cat("  strata (", length(x$names), "): ", paste(x$names, collapse = ", "), "\n", sep = "")
+  if (!is.null(x$include_in_total)) {
+    cat("  included in the total:", paste(names(x$include_in_total), x$include_in_total, sep = "=", collapse = ", "), "\n")
+  }
+  if (isTRUE(x$written)) cat("  polygons written to the output file (attribute `stratum`)\n")
+  invisible(x)
+}

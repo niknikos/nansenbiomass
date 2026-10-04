@@ -368,7 +368,7 @@ test_that("run_estimate() reproduces the direct estimate and stages a passing ex
   expect_match(unique(est$config_hash), "^[0-9a-f]{32}$")
   expect_equal(unique(est$config_hash), config_hash(example_config()))
   expect_match(unique(est$code_version), "RstoxFramework 4\\.2\\.1; RstoxBase 2\\.2\\.1; RstoxData 2\\.2\\.1")
-  expect_match(unique(est$code_version), "template sweptarea 2\\.0\\.0$")
+  expect_match(unique(est$code_version), "template sweptarea 2\\.1\\.0$")
   expect_true(all(est$value > 0))
 
   # The baseline estimate equals the direct design-based estimate, which uses
@@ -660,7 +660,7 @@ test_that("biomass through super-individuals agrees with the catch-weight route"
   cfg$lengths$interval_cm <- 2
   b <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "stB")))
   expect_equal(b$staged$outcome, "pass")
-  expect_match(unique(b$estimates$code_version), "template sweptarea 2\\.0\\.0$")
+  expect_match(unique(b$estimates$code_version), "template sweptarea 2\\.1\\.0$")
   key <- c("species_code", "stratum", "quantity")
   m <- merge(a$estimates[c(key, "value", "unit")], b$estimates[c(key, "value", "unit")], by = key,
              suffixes = c(".catch", ".si"))
@@ -914,4 +914,133 @@ test_that("the StoX packages are attached before use, also after a session detac
   res <- suppressWarnings(run_estimate(quick_config(2L), root = s$root,
                                        staging_dir = file.path(s$root, "st")))
   expect_gt(nrow(res$estimates), 0L)   # whether the export passes the airlock is a separate question
+})
+
+# ---- Strata from a project or a polygon file ------------------------------------------
+
+strata_feature_list <- function(root, label = "polygonName") {
+  sv <- synth_survey(seed = 1)
+  st <- sv$strata[c("stratum", "geometry")]
+  names(st)[1] <- label
+  f <- file.path(root, "tmp.geojson")
+  sf::st_write(st, f, quiet = TRUE)
+  jsonlite::read_json(f, simplifyVector = FALSE)
+}
+
+test_that("strata are read from a polygon file, and written for the configuration", {
+  s <- synthetic_root()
+  d <- stox_strata("strata/synthetic-strata.geojson", root = s$root, out = "strata/clean.geojson")
+  expect_s3_class(d, "nb_strata")
+  expect_equal(d$label, "StratumName")
+  expect_equal(d$names, c("SYN-A", "SYN-B", "SYN-C", "SYN-D"))
+  written <- sf::st_read(file.path(s$root, "strata", "clean.geojson"), quiet = TRUE)
+  expect_equal(written$stratum, d$names)
+  expect_equal(sf::st_crs(written)$epsg, 4326L)
+  expect_output(print(d), "SYN-A, SYN-B, SYN-C, SYN-D")
+  expect_error(stox_strata("strata/synthetic-strata.geojson", root = s$root, out = "strata/clean.geojson"),
+               "SX-STR-02")
+  expect_equal(stox_strata("strata/synthetic-strata.geojson", root = s$root, out = "strata/clean.geojson",
+                           overwrite = TRUE)$names, d$names)
+  expect_error(stox_strata("strata/synthetic-strata.geojson", root = s$root, label = "nope"), "SX-STR-03")
+})
+
+test_that("strata are read from the process data of a project.json and from a project folder", {
+  s <- synthetic_root()
+  fc <- strata_feature_list(s$root)
+  dir.create(file.path(s$root, "p1", "process"), recursive = TRUE)
+  jsonlite::write_json(list(project = list(models = list(baseline = list(list(
+    processName = "DefineStratumPolygon", functionName = "RstoxBase::DefineStratumPolygon",
+    functionParameters = list(StratumNameLabel = "polygonName"), processData = fc
+  ))))), file.path(s$root, "p1", "process", "project.json"), auto_unbox = TRUE)
+  d <- stox_strata("p1", root = s$root)
+  expect_equal(d$source, "the project's process data")
+  expect_equal(d$label, "polygonName")
+  expect_equal(d$names, c("SYN-A", "SYN-B", "SYN-C", "SYN-D"))
+  expect_equal(stox_strata("p1/process/project.json", root = s$root)$names, d$names)
+  # a project folder whose file has no process data but whose output holds the polygons
+  dir.create(file.path(s$root, "p2", "process"), recursive = TRUE)
+  jsonlite::write_json(list(project = list(models = list(baseline = list(list(
+    processName = "DefineStratumPolygon", functionName = "RstoxBase::DefineStratumPolygon"))))),
+    file.path(s$root, "p2", "process", "project.json"), auto_unbox = TRUE)
+  dir.create(file.path(s$root, "p2", "output", "baseline", "DefineStratumPolygon"), recursive = TRUE)
+  file.copy(file.path(s$root, "strata", "synthetic-strata.geojson"),
+            file.path(s$root, "p2", "output", "baseline", "DefineStratumPolygon", "StratumPolygon.geojson"))
+  d2 <- stox_strata("p2", root = s$root)
+  expect_equal(d2$source, "a polygon file in the project folder")
+  expect_equal(d2$names, d$names)
+  # nothing to find
+  dir.create(file.path(s$root, "p3", "process"), recursive = TRUE)
+  writeLines("{}", file.path(s$root, "p3", "process", "project.json"))
+  expect_error(stox_strata("p3", root = s$root), "SX-STR-01")
+})
+
+test_that("strata are read from a StoX 2.7 project.xml with their includeintotal flag", {
+  skip_if_not_installed("RstoxBase")
+  s <- synthetic_root()
+  wkt <- sf::st_as_text(sf::st_geometry(s$sv$strata))
+  include <- c("true", "true", "true", "false")
+  values <- unlist(lapply(seq_along(wkt), function(i) c(
+    sprintf('      <value polygonkey="%s" polygonvariable="includeintotal">%s</value>', s$sv$strata$stratum[i], include[i]),
+    sprintf('      <value polygonkey="%s" polygonvariable="polygon">%s</value>', s$sv$strata$stratum[i], wkt[i]))))
+  dir.create(file.path(s$root, "v27", "process"), recursive = TRUE)
+  writeLines(c('<?xml version="1.0" encoding="UTF-8"?>', '<project xmlns="http://www.imr.no/formats/stox/v1">',
+               '  <processdata>', '    <stratumpolygon>', values, '    </stratumpolygon>', '  </processdata>', '</project>'),
+             file.path(s$root, "v27", "process", "project.xml"))
+  d <- stox_strata("v27/process/project.xml", root = s$root)
+  expect_equal(d$names, c("SYN-A", "SYN-B", "SYN-C", "SYN-D"))
+  expect_equal(unname(d$include_in_total), c(TRUE, TRUE, TRUE, FALSE))
+})
+
+test_that("stratum names can be left out of the configuration", {
+  s <- synthetic_root()
+  x <- yaml::read_yaml(example_config())
+  x$data$stratum_names <- NULL
+  cfg <- validate_config(x)
+  expect_null(cfg$data$stratum_names)
+  expect_equal(validate_config(cfg), cfg)
+  inc <- inclusion_summary(cfg, root = s$root)
+  expect_equal(inc$by_stratum$stratum, c("SYN-A", "SYN-B", "SYN-C", "SYN-D"))
+  expect_equal(sum(inc$by_stratum$n_kept), 45L)
+  bad <- cfg; bad$data$stratum_label <- "nope"
+  expect_error(inclusion_summary(bad, root = s$root), "SX-STRATA-02|SX-INC-01")
+})
+
+test_that("a run without stratum names in the configuration gives the same estimates", {
+  skip_if_no_stox()
+  s <- synthetic_root(excluded = c(pelagic = 1))
+  with <- suppressWarnings(run_estimate(quick_config(2L), root = s$root, staging_dir = file.path(s$root, "a")))
+  cfg <- quick_config(2L)
+  cfg$data$stratum_names <- NULL
+  without <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "b")))
+  cols <- c("species_code", "stratum", "quantity", "value")
+  expect_equal(without$estimates[cols], with$estimates[cols])
+})
+
+test_that("super-individual reports leave out individuals without a weight, as the official reports do", {
+  skip_if_no_stox()
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "surveys")); dir.create(file.path(root, "strata"))
+  sv <- synth_survey(synth_design(), seed = 1)
+  full <- sv$survey
+  part <- sv$survey
+  withr::with_seed(1, part$individual$individualweight[sample(nrow(part$individual), nrow(part$individual) %/% 3)] <- NA)
+  strata <- sv$strata
+  names(strata)[names(strata) == "stratum"] <- "StratumName"
+  sf::st_write(strata, file.path(root, "strata", "synthetic-strata.geojson"), quiet = TRUE)
+  cfg <- quick_config(2L)
+  cfg$species <- "SYN001"
+  cfg$biomass <- list(method = "super_individuals", distribution_method = "HaulDensity",
+                      imputation = list(at_missing = "IndividualTotalLength", to_impute = "IndividualTotalLength",
+                                        by_equal = "LengthResolution", seed = 1))
+  cfg <- validate_config(cfg)
+  attr(cfg, "config_hash") <- config_hash(example_config())
+  total <- function(survey, dir) {
+    write_biotic(survey, file.path(root, "surveys", "synthetic-seed1.xml"))
+    r <- suppressWarnings(run_estimate(cfg, root = root, staging_dir = file.path(root, dir)))$estimates
+    r$value[r$stratum == "total" & r$quantity == "biomass"]
+  }
+  b_full <- total(full, "a")
+  b_part <- total(part, "b")
+  expect_true(is.finite(b_part))     # missing weights are removed, not propagated
+  expect_lt(b_part, b_full)          # and the biomass is lower than with all weights
 })

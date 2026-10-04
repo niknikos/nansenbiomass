@@ -359,6 +359,31 @@ cannot be tested in the cloud is a real project saved by StoX 3.4: RstoxFramewor
 backward-compatibility actions that should convert it on opening, and the first run on the laptop shows
 whether it does. Tests: 467 before WP3; the totals are given at the end of Phase 3b.
 
+**Second look at the first official project (4 October 2026).** The reviewed output of the updated
+`stox_key_settings()` and the exclusion file were received.
+
+- Exclusion: `stox_station_exclusions()` on the official project gave 2 listed, 2 matched, 0 unmatched,
+  so the StoX 3.4 station keys map under 4.2.1.
+- Biomass route settings of the project: `SuperIndividuals` with `HaulDensity`; `ImputeSuperIndividuals`
+  with `RandomSampling`, `ImputeAtMissing = IndividualTotalLength`, `ImputeByEqual = LengthResolution`,
+  `ToImpute = IndividualTotalLength`, seed 1 (`ImputationLevels` does not exist in 3.4; 4.2.1 uses
+  its default), `Individuals` on the species-filtered data. These are configuration values
+  (`biomass.distribution_method` and `biomass.imputation.*`), not defaults.
+- Its reports use `RemoveMissingValues = TRUE` for biomass and for the stratum and total abundance
+  (by length: false). Template 2.1.0 does the same for the super-individual reports: individuals
+  without a weight give no biomass and are left out of the sum instead of making it missing (tested).
+- The haul filter is `Gear %in% c("3032", "3033")` plus clauses on `gearcondition` and `samplequality`
+  that the summary still withholds (probably longer lists than the five values allowed); the
+  station filter is the exclusion list; the species filter has `FilterUpwards` false.
+- `AddToStoxBiotic` adds `gearcondition`, `samplequality`, `stationtype`, `sampletype` and `area` to
+  the StoxBiotic data, so that the filters can use them; our key-list filter does not need it.
+- Strata: the polygon attribute is `stratum` (`StratumNameLabel`), accurate area, no simplification,
+  two strata; the polygon file's path is withheld. The project lead has no objection to sharing the
+  strata, so `stox_strata()` reads them from a polygon file, a 2.7 `project.xml`, a project file's process
+  data or a project folder's saved polygon output, prints the names, and can write a clean GeoJSON file
+  (attribute `stratum`) for `data.strata`; `data.stratum_names` is now optional and is read from the
+  polygons when absent.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

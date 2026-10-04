@@ -505,6 +505,22 @@ station_strata <- function(station, polygons, label) {
   out
 }
 
+# Stratum names from the polygons, when the configuration does not list them.
+resolve_strata_names <- function(cfg, polygons) {
+  if (!is.null(cfg$data$stratum_names)) return(cfg)
+  label <- cfg$data$stratum_label
+  if (!label %in% names(polygons)) {
+    nb_abort("SX-STRATA-02", "The stratum polygons have no attribute named by data.stratum_label.")
+  }
+  nm <- unique(as.character(polygons[[label]]))
+  nm <- nm[!is.na(nm)]
+  if (length(nm) == 0L || any(nm == "total")) {
+    nb_abort("SX-STRATA-03", "The stratum polygons have no usable stratum names.")
+  }
+  cfg$data$stratum_names <- nm
+  cfg
+}
+
 # Stratum polygons from a polygon file (any format sf reads) or from the process
 # data of a StoX 2.7 project.xml (through RstoxBase, as StoX itself does). For a
 # project.xml, each stratum's `includeintotal` flag is kept.
@@ -586,6 +602,7 @@ inclusion_summary <- function(config, root = data_root()) {
     {
       survey <- read_biotic(files)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
+      cfg <- resolve_strata_names(cfg, polygons)
       inclusion_counts(survey$station, cfg, polygons, read_station_exclusions(cfg, root))
     },
     log_dir = file.path(root, "logs"),
@@ -798,6 +815,7 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       survey <- read_biotic(files)
       check_station_keys(survey)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
+      cfg <- resolve_strata_names(cfg, polygons)
       inc <- apply_inclusion(survey$station, cfg, polygons, read_station_exclusions(cfg, root))
       if (!any(inc$keep)) nb_abort("SX-INC-02", "No station is kept by the inclusion rules.")
       st <- survey$station
