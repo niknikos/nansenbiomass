@@ -480,9 +480,11 @@ synth_survey_impl <- function(design, seed) {
           lengthsampleweight = round(ls_weight, 3),
           lengthsamplecount = n_meas,
           scientificname = paste("Synthetica", tolower(sp$species_code)),
-          lengthmeasurement = NA_character_,
-          catchproducttype = NA_character_,
-          sampleproducttype = NA_character_,
+          # Codes as in the real archive (E: total length; product type 1); StoX
+          # sets weights and lengths to missing when they are empty.
+          lengthmeasurement = "E",
+          catchproducttype = "1",
+          sampleproducttype = "1",
           raisingfactor = 1,
           specimensamplecount = n_meas
         )
@@ -493,8 +495,8 @@ synth_survey_impl <- function(design, seed) {
           length = fish$length,
           individualweight = fish$individualweight,
           sex = fish$sex,
-          lengthresolution = NA_character_,
-          individualproducttype = NA_character_
+          lengthresolution = "1",
+          individualproducttype = "1"
         )
       }
     }

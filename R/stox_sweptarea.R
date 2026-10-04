@@ -406,7 +406,12 @@ inclusion_summary <- function(config, root = data_root()) {
   )
 }
 
-inclusion_counts <- function(st, cfg, polygons) {
+# Applies the inclusion rules (D-09) to the station table. The single source of
+# truth for which stations are kept: inclusion_summary() reports counts from it
+# and the StoX project is built from the same result. The returned `keep`,
+# `stratum` and `distance_used` are station-level (C1) and never leave the
+# data zone.
+apply_inclusion <- function(st, cfg, polygons) {
   keep <- rep(TRUE, nrow(st))
   rows <- list()
   step <- function(rule, bad) {
@@ -446,7 +451,19 @@ inclusion_counts <- function(st, cfg, polygons) {
   }
   stratum <- station_strata(st, polygons, cfg$data$stratum_label)
   step("start position inside the strata", is.na(stratum))
-  kept <- table(factor(stratum[keep], levels = cfg$data$stratum_names))
+  # The distance StoX will use: the recorded one, or the recovered one.
+  distance_used <- st$distance
+  from_log <- recovered & !is.na(rec$log)
+  distance_used[from_log] <- rec$log[from_log]
+  from_pos <- recovered & !from_log
+  distance_used[from_pos] <- rec$positions[from_pos]
+  list(keep = keep, stratum = stratum, distance_used = distance_used,
+       rules = dplyr::bind_rows(rows), distance = distance)
+}
+
+inclusion_counts <- function(st, cfg, polygons) {
+  inc <- apply_inclusion(st, cfg, polygons)
+  kept <- table(factor(inc$stratum[inc$keep], levels = cfg$data$stratum_names))
   by_stratum <- tibble::tibble(stratum = names(kept), n_kept = as.integer(kept))
   if ("includeintotal" %in% names(polygons)) {
     flag <- polygons$includeintotal[match(by_stratum$stratum,
@@ -454,7 +471,7 @@ inclusion_counts <- function(st, cfg, polygons) {
     by_stratum$include_in_total <- flag
   }
   structure(
-    list(rules = dplyr::bind_rows(rows), distance = distance, by_stratum = by_stratum),
+    list(rules = inc$rules, distance = inc$distance, by_stratum = by_stratum),
     class = "nb_inclusion"
   )
 }
