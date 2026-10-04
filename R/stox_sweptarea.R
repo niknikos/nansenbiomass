@@ -22,6 +22,78 @@ expression_fields <- function(x) {
   unique(tokens[tokens != "<name withheld>"])
 }
 
+# ---- Filter expressions: which clauses may be shown ------------------------------
+#
+# A filter expression is split into its clauses (joined by and/or/&/|). A clause
+# is shown only when it compares a coded field, or a distance or depth, with a few
+# short codes or numbers. Every other clause, in particular one on a field that
+# can identify a station (serial numbers, station and haul keys) or one with a
+# long list of values, is replaced by a marker, so a partly safe expression never
+# reveals its unsafe part.
+
+filter_code_fields <- c(
+  "stationtype", "samplequality", "gearcondition", "haulvalidity", "gear", "sampletype",
+  "catchproducttype", "sampleproducttype", "individualproducttype", "lengthmeasurement",
+  "lengthresolution", "catchcategory", "species"
+)
+filter_numeric_fields <- c(
+  "distance", "towdistance", "effectivetowdistance", "bottomdepthstart", "bottomdepthstop",
+  "bottomdepth", "minhauldepth", "maxhauldepth"
+)
+filter_max_values <- 5L
+filter_max_clauses <- 12L
+filter_max_chars <- 400L
+
+filter_value <- "(?:'[A-Za-z0-9._-]{1,8}'|\"[A-Za-z0-9._-]{1,8}\"|[A-Za-z0-9._-]{1,8})"
+filter_list <- paste0("(?:c\\(|\\[|\\()\\s*", filter_value, "(?:\\s*,\\s*", filter_value,
+                      "){0,", filter_max_values - 1L, "}\\s*(?:\\)|\\])")
+filter_cmp <- paste0("^\\s*\\(*\\s*([A-Za-z_][A-Za-z0-9_.]*)\\s*(==|!=|<=|>=|<|>|=)\\s*(",
+                     filter_value, ")\\s*\\)*\\s*$")
+filter_in <- paste0("^\\s*\\(*\\s*([A-Za-z_][A-Za-z0-9_.]*)\\s*(%in%|%notin%|not\\s+in|in)\\s*(",
+                    filter_list, ")\\s*\\)*\\s*$")
+
+safe_clause <- function(clause) {
+  m <- regexec(filter_cmp, clause, perl = TRUE)
+  parts <- regmatches(clause, m)[[1]]
+  if (length(parts) == 0L) {
+    m <- regexec(filter_in, clause, perl = TRUE)
+    parts <- regmatches(clause, m)[[1]]
+    if (length(parts) == 0L) return(FALSE)
+    return(tolower(parts[2]) %in% filter_code_fields)
+  }
+  field <- tolower(parts[2])
+  value <- gsub("['\"]", "", parts[4])
+  if (field %in% filter_code_fields) return(TRUE)
+  field %in% filter_numeric_fields && grepl("^-?[0-9]+(\\.[0-9]+)?$", value)
+}
+
+# Returns the expression with its unsafe clauses replaced by a marker, and the
+# numbers of clauses shown and withheld.
+redact_expression <- function(x) {
+  none <- list(text = NA_character_, n_shown = 0L, n_withheld = 1L)
+  if (nchar(x) > filter_max_chars) return(none)
+  # Quoted values are masked, so that a connector inside a literal never splits
+  # the expression; an unbalanced quote makes the expression unparseable.
+  masked <- x
+  q <- gregexpr("'[^']*'|\"[^\"]*\"", x)[[1]]
+  if (q[1] > 0L) {
+    for (i in seq_along(q)) {
+      substr(masked, q[i], q[i] + attr(q, "match.length")[i] - 1L) <-
+        strrep("_", attr(q, "match.length")[i])
+    }
+  }
+  if (grepl("['\"]", masked)) return(none)
+  m <- gregexpr("\\s+(and|or)\\s+|&&?|\\|\\|?", masked, ignore.case = TRUE, perl = TRUE)
+  clauses <- regmatches(x, m, invert = TRUE)[[1]]
+  connectors <- trimws(regmatches(x, m)[[1]])
+  if (length(clauses) > filter_max_clauses) return(none)
+  ok <- vapply(clauses, safe_clause, logical(1), USE.NAMES = FALSE)
+  shown <- ifelse(ok, trimws(clauses), "<withheld clause>")
+  text <- shown[1]
+  for (i in seq_along(connectors)) text <- paste(text, connectors[i], shown[i + 1L])
+  list(text = text, n_shown = sum(ok), n_withheld = sum(!ok))
+}
+
 # Classifies one leaf value of a StoX setting. Returns the value to show (or a
 # withheld marker), its status and, for expressions, the fields it references.
 classify_stox_value <- function(name, value) {
@@ -37,8 +109,14 @@ classify_stox_value <- function(name, value) {
     grepl("==|!=|>=|<=|%in%|%notin%|[<>&|]| in \\[| not in ", v)
   if (is_expression) {
     fields <- expression_fields(v)
-    return(list(value = "<withheld: expression>", status = "withheld",
-                fields = if (length(fields)) paste(fields, collapse = ", ") else NA_character_))
+    fields <- if (length(fields)) paste(fields, collapse = ", ") else NA_character_
+    red <- redact_expression(v)
+    if (red$n_shown == 0L) {
+      return(list(value = "<withheld: expression>", status = "withheld", fields = fields))
+    }
+    return(list(value = red$text,
+                status = if (red$n_withheld == 0L) "shown" else "partly withheld",
+                fields = fields))
   }
   if (grepl("[/\\\\]", v) ||
       grepl("\\.(xml|json|txt|csv|tsv|geojson|shp|wkt|rds|zip)$", v, ignore.case = TRUE)) {
@@ -223,10 +301,13 @@ locate_stox_project_file <- function(target) {
 #' Reports how an existing StoX project is set up, without any of its data: the
 #' models and processes in order, each process's function, its parameter names
 #' and the values that are plain settings (methods, options, numbers such as
-#' bootstrap iterations and seeds). For filter expressions it reports only the
-#' field names they reference. It withholds file paths, literal values in
-#' expressions, free text, and the whole process-data section (station-to-PSU
-#' assignments, stratum polygons), of which it reports only entry counts. It
+#' bootstrap iterations and seeds). For filter expressions it reports the field
+#' names they reference, and shows the clauses that compare a coded field (such as
+#' `samplequality`) or a distance or depth with a few short codes or numbers;
+#' every other clause, in particular one on a field that can identify a station,
+#' is replaced by `<withheld clause>`. It withholds file paths, free text, and the
+#' whole process-data section (station-to-PSU assignments, stratum polygons), of
+#' which it reports only entry counts. It
 #' reads StoX 2.7 projects (`process/project.xml`) and StoX 3 or later projects
 #' (`process/project.json`).
 #'
@@ -279,7 +360,7 @@ describe_stox_project <- function(path, root = data_root()) {
 
 #' @export
 print.nb_stox_description <- function(x, ...) {
-  cat("<nb_stox_description> structure only; paths, expressions and process data withheld\n")
+  cat("<nb_stox_description> structure only; paths, free text, process data and identifier-like filter clauses withheld\n")
   cat("Format:", x$format, "\n")
   cat("Versions:", paste(x$versions, collapse = "; "), "\n\n")
   cat("Processes and settings:\n")
@@ -310,7 +391,7 @@ stox_settings_rules <- list(
 #' fields the filters use, the bootstrap settings, how catches are raised, the
 #' PSU, stratum, survey and layer definitions, and translations. It works on the
 #' output of [describe_stox_project()], so it shows nothing that function
-#' withholds (paths, literal values in filters, free text, process data), and it
+#' withholds (paths, identifier-like filter clauses, free text, process data), and it
 #' says which items the project does not contain. It reads StoX 2.7
 #' (`project.xml`) and StoX 3 or later (`project.json`) projects; the matching is
 #' by function and parameter names, and StoX 2.7 names have not been verified
@@ -365,7 +446,7 @@ stox_key_settings <- function(x, root = data_root()) {
 
 #' @export
 print.nb_stox_settings <- function(x, ...) {
-  cat("<nb_stox_settings> structure only; paths, expressions and process data withheld\n")
+  cat("<nb_stox_settings> structure only; paths, free text, process data and identifier-like filter clauses withheld\n")
   cat("Format:", x$format, "\n")
   cat("Versions:", paste(x$versions, collapse = "; "), "\n\n")
   cat("Chain, in order:\n")

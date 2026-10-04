@@ -23,10 +23,13 @@ step, process, function, parameter, value, status and fields) and
 Reports how an existing StoX project is set up, without any of its data: the
 models and processes in order, each process's function, its parameter names
 and the values that are plain settings (methods, options, numbers such as
-bootstrap iterations and seeds). For filter expressions it reports only the
-field names they reference. It withholds file paths, literal values in
-expressions, free text, and the whole process-data section (station-to-PSU
-assignments, stratum polygons), of which it reports only entry counts. It
+bootstrap iterations and seeds). For filter expressions it reports the field
+names they reference, and shows the clauses that compare a coded field (such as
+\code{samplequality}) or a distance or depth with a few short codes or numbers;
+every other clause, in particular one on a field that can identify a station,
+is replaced by \verb{<withheld clause>}. It withholds file paths, free text, and the
+whole process-data section (station-to-PSU assignments, stratum polygons), of
+which it reports only entry counts. It
 reads StoX 2.7 projects (\code{process/project.xml}) and StoX 3 or later projects
 (\code{process/project.json}).
 }

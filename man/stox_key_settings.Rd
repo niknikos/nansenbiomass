@@ -25,7 +25,7 @@ how density is computed, any compensation of the length distribution, the
 fields the filters use, the bootstrap settings, how catches are raised, the
 PSU, stratum, survey and layer definitions, and translations. It works on the
 output of \code{\link[=describe_stox_project]{describe_stox_project()}}, so it shows nothing that function
-withholds (paths, literal values in filters, free text, process data), and it
+withholds (paths, identifier-like filter clauses, free text, process data), and it
 says which items the project does not contain. It reads StoX 2.7
 (\code{project.xml}) and StoX 3 or later (\code{project.json}) projects; the matching is
 by function and parameter names, and StoX 2.7 names have not been verified

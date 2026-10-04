@@ -244,6 +244,18 @@ listed. It works on the output of `describe_stox_project()`, so it withholds the
 The 2.7 function and parameter names it matches on have not been verified against a real 2.7
 project. Tests: 387 pass in the cloud; `R CMD check` Status: OK.
 
+**Filter values in `describe_stox_project()` (4 October 2026, project lead: option B).** The
+description used to withhold every literal value in a filter expression. It now splits an
+expression into its clauses and shows a clause only when it compares a coded field
+(`stationtype`, `samplequality`, `gearcondition`, `haulvalidity`, `gear`, product-type and
+length-measurement fields, `catchcategory`, `species`) or a distance or depth with at most five
+short codes or numbers. Every other clause, in particular one on a field that can identify a
+station (serial numbers, station or haul keys, positions), is replaced by `<withheld clause>`,
+and an expression that is too long, has more than 12 clauses, has an unbalanced quote or is not a
+plain comparison is withheld whole. Quoted values are never split, so a connector inside a
+literal cannot let a fragment through. Paths, free text and the process-data section remain
+withheld. Tests plant identifiers, quoted connectors and long lists to show that none comes back.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

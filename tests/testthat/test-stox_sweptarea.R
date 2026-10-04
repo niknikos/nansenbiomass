@@ -111,13 +111,16 @@ test_that("a StoX 2.7 project.xml is described without its data", {
   expect_equal(p$value[p$parameter == "FileName1"], "<withheld: path>")
   expect_equal(p$value[p$parameter == "Note"], "<withheld: text>")
   fs <- p[p$parameter == "FishStationExpr", ]
-  expect_equal(fs$value, "<withheld: expression>")
+  # the coded clause is shown, the identifier clause is not
+  expect_equal(fs$value, "samplequality == 12 and <withheld clause>")
+  expect_equal(fs$status, "partly withheld")
   expect_equal(fs$fields, "samplequality, serialno")
+  expect_equal(p$value[p$parameter == "CatchExpr"], "species not in [90001,90002]")
   expect_equal(p$fields[p$parameter == "CatchExpr"], "species")
   expect_setequal(d$process_data$element, c("bioticassignment", "stratumpolygon"))
   expect_equal(d$process_data$n_entries[d$process_data$element == "bioticassignment"], 2L)
   expect_false(grepl(sentinel, all_text(d)))
-  expect_false(grepl("90001|MULTIPOLYGON", all_text(d)))
+  expect_false(grepl("MULTIPOLYGON", all_text(d)))
 })
 
 test_that("a StoX 3 or later project.json is described without its data", {
@@ -488,7 +491,7 @@ key_project <- function(sentinel) {
         proc("TranslateBiotic", "RstoxData::TranslateBiotic",
              list(VariableName = "catchcategory", Note = paste("free text", sentinel))),
         proc("FilterStoxBiotic", "RstoxData::FilterStoxBiotic",
-             list(FilterExpression = list(Haul = paste0("HaulQuality == 12 & HaulKey != '", sentinel, "'")))),
+             list(FilterExpression = list(Haul = paste0("samplequality == 12 & HaulKey != '", sentinel, "'")))),
         proc("BioticPSU", "RstoxBase::DefineBioticPSU", list(DefinitionMethod = "StationToPSU"),
              data = list(BioticPSU = list(list(Stratum = "S1", PSU = "P1", Haul = sentinel)))),
         proc("LengthDistribution", "RstoxBase::LengthDistribution",
@@ -521,7 +524,8 @@ test_that("stox_key_settings() picks out the settings and withholds the rest", {
   expect_equal(val("raising and length distribution", "RaisingFactorPriority"), "Weight")
   expect_true(any(s$item == "bootstrap" & s$parameter == "NumberOfBootstraps" & s$value == "500"))
   expect_true(any(s$item == "bootstrap" & grepl("Seed", s$parameter) & s$value == "1234"))
-  expect_true(any(s$item == "filters (fields only)" & grepl("HaulQuality", s$fields)))
+  expect_true(any(s$item == "filters (fields only)" & grepl("samplequality", s$fields)))
+  expect_true(any(s$value == "samplequality == 12 & <withheld clause>"))
   expect_true(any(s$item == "translations"))
   expect_equal(k$not_found, character(0))
   expect_equal(k$chain$process[k$chain$model == "baseline"][1], "TranslateBiotic")
@@ -529,7 +533,7 @@ test_that("stox_key_settings() picks out the settings and withholds the rest", {
   txt <- paste(c(utils::capture.output(print(k)), unlist(k$settings), unlist(k$process_data)),
                collapse = "\n")
   expect_false(grepl(sentinel, txt, fixed = TRUE))
-  expect_false(grepl("HaulQuality == 12", txt, fixed = TRUE))
+  expect_match(txt, "samplequality == 12 & <withheld clause>", fixed = TRUE)
   expect_match(txt, "withheld")
   # the same result from a description
   expect_equal(stox_key_settings(describe_stox_project("official", root = root))$settings, s)
@@ -543,4 +547,59 @@ test_that("stox_key_settings() reports the items a project does not contain", {
   expect_true("sweep width and density" %in% setdiff(names(stox_settings_rules), k$not_found))
   expect_output(print(k), "Not found in this project")
   expect_false(grepl(sentinel, paste(utils::capture.output(print(k)), collapse = "\n"), fixed = TRUE))
+})
+
+# ---- Filter expressions: what may be shown ---------------------------------------
+
+show <- function(x) {
+  r <- redact_expression(x)
+  if (r$n_shown == 0L) "<withheld: expression>" else r$text
+}
+
+test_that("coded clauses in filters are shown and identifier clauses are not", {
+  # shown: coded fields and distance or depth thresholds, with few short values
+  expect_equal(show("samplequality == 12"), "samplequality == 12")
+  expect_equal(show("stationtype %in% c(12) & samplequality in [12,13] | gearcondition == 1"),
+               "stationtype %in% c(12) & samplequality in [12,13] | gearcondition == 1")
+  expect_equal(show("species not in [90001,90002]"), "species not in [90001,90002]")
+  expect_equal(show("distance > 0.5 and gear == 3270"), "distance > 0.5 and gear == 3270")
+  expect_equal(show("(stationtype == 12) and (gearcondition == 1)"),
+               "(stationtype == 12) and (gearcondition == 1)")
+  # identifier fields are replaced, whatever the value looks like
+  expect_equal(show("samplequality == 12 and serialno != 'X1'"),
+               "samplequality == 12 and <withheld clause>")
+  expect_equal(show("HaulKey %in% c('1','2')"), "<withheld: expression>")
+  expect_equal(show("station == 7 | samplequality == 12"), "<withheld clause> | samplequality == 12")
+  for (f in c("serialno", "serialnumber", "StationKey", "HaulKey", "cruise", "missionnumber",
+              "platform", "latitudestart", "longitudestart", "catchsampleid", "specimenid")) {
+    expect_equal(show(paste0(f, " == 12")), "<withheld: expression>")
+  }
+})
+
+test_that("long lists, long values and odd syntax in filters are withheld", {
+  expect_equal(show("samplequality in [1,2,3,4,5,6]"), "<withheld: expression>")
+  expect_equal(show("samplequality %in% c(1,2,3,4,5)"), "samplequality %in% c(1,2,3,4,5)")
+  expect_equal(show("samplequality == 'ST2019104'"), "<withheld: expression>")   # 9 characters
+  expect_equal(show("samplequality == 'SENTINEL_7f3a9c'"), "<withheld: expression>")
+  # a connector inside a quoted value cannot smuggle a clause through
+  expect_equal(show("serialno != 'a & samplequality == 12'"), "<withheld: expression>")
+  expect_equal(show("serialno != 'a | gear == 1 and gear == 2'"), "<withheld: expression>")
+  # functions, arithmetic and anything else that is not a plain comparison
+  expect_equal(show("is.na(samplequality)"), "<withheld: expression>")
+  expect_equal(show("samplequality == 12 + serialno"), "<withheld: expression>")
+  expect_equal(show("distance == 1"), "distance == 1")
+  expect_equal(show("distance > abc"), "<withheld: expression>")   # a threshold must be a number
+  expect_equal(show("samplequality == 12 and serialno != 'unbalanced"), "<withheld: expression>")
+  expect_equal(show(strrep("samplequality == 12 and ", 20)), "<withheld: expression>")
+  expect_equal(show(paste(rep("samplequality == 12", 13), collapse = " & ")), "<withheld: expression>")
+  expect_equal(show(strrep("x", 500)), "<withheld: expression>")
+})
+
+test_that("classify_stox_value() reports shown, partly withheld and withheld expressions", {
+  expect_equal(classify_stox_value("FilterExpression", "samplequality == 12")$status, "shown")
+  expect_equal(classify_stox_value("FilterExpression", "samplequality == 12 & HaulKey != 'a'")$status,
+               "partly withheld")
+  expect_equal(classify_stox_value("FilterExpression", "HaulKey != 'a'")$status, "withheld")
+  expect_equal(classify_stox_value("FilterExpression", "HaulKey != 'a'")$value, "<withheld: expression>")
+  expect_equal(classify_stox_value("FishStationExpr", "HaulKey != 'a'")$fields, "HaulKey")
 })
