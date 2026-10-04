@@ -8,9 +8,9 @@ survey:
 data:
   biotic:
     - surveys/survey-A-project-copy.xml   # the project's own copy of the biotic file
-  strata: strata/NWA_DEM_south.wkt        # StoX WKT stratum file, 48 strata
+  strata: strata/NWA_DEM_south.wkt        # StoX WKT stratum file, 56 strata (8 regions x 7 depth bands)
   stratum_label: stratum                  # as StratumNameLabel in the project
-  # stratum_names: left out; the 48 names are read from the strata file
+  # stratum_names: left out; the names are read from the strata file
   # The strata to estimate are those of the regions in which stations were kept (the surveyed
   # EEZ(s)): every depth band of such a region is selected, sampled or not (an unsampled band
   # gets an NA estimate). Check the strata and counts with inclusion_summary() before a run.
