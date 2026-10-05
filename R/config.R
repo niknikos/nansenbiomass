@@ -58,8 +58,13 @@ validate_config <- function(cfg) {
 
   # survey
   if (!is_string(cfg$survey$label)) cf_abort("CF-REQ-01", "survey.label", "is required")
-  if (!whole_number(cfg$survey$year)) cf_abort("CF-TYPE-01", "survey.year", "must be a year")
-  cfg$survey$year <- as.integer(cfg$survey$year)
+  # `auto` takes the survey number (the cruise) and the year from the biotic file at run time
+  if (identical(cfg$survey$year, "auto")) {
+    cfg$survey$year <- "auto"
+  } else {
+    if (!whole_number(cfg$survey$year)) cf_abort("CF-TYPE-01", "survey.year", "must be a year or `auto`")
+    cfg$survey$year <- as.integer(cfg$survey$year)
+  }
 
   # data
   biotic <- cfg$data$biotic
@@ -256,7 +261,8 @@ validate_config <- function(cfg) {
 #' Reads one survey configuration (`configs/<survey>.yml`) and validates it with
 #' [validate_config()]. The schema:
 #'
-#' * `survey`: `label` (text) and `year`.
+#' * `survey`: `label` (text) and `year`; either may be `auto`, which takes the survey number
+#'   (the cruise of the biotic file) and the year from the data when the estimate is run.
 #' * `data`: `biotic` (one or more biotic files), `strata` (a stratum polygon
 #'   file in any format sf reads, or a StoX 2.7 `project.xml` holding the
 #'   strata), both relative to `NANSEN_DATA_ROOT`;

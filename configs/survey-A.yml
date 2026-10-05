@@ -3,8 +3,8 @@
 # is the project's own unless marked "to confirm". Paths are relative to NANSEN_DATA_ROOT; the
 # files named here are in the data zone, not in the repository.
 survey:
-  label: SURVEY-A            # to confirm: the survey identifier that should appear in released tables
-  year: 2022                 # to confirm: survey year
+  label: auto                # the survey number (cruise) of the biotic file
+  year: auto                 # the start year of the stations in the biotic file
 data:
   biotic:
     - surveys/survey-A-project-copy.xml   # the project's own copy of the biotic file

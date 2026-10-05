@@ -19,7 +19,8 @@ Reads one survey configuration (\verb{configs/<survey>.yml}) and validates it wi
 }
 \details{
 \itemize{
-\item \code{survey}: \code{label} (text) and \code{year}.
+\item \code{survey}: \code{label} (text) and \code{year}; either may be \code{auto}, which takes the survey number
+(the cruise of the biotic file) and the year from the data when the estimate is run.
 \item \code{data}: \code{biotic} (one or more biotic files), \code{strata} (a stratum polygon
 file in any format sf reads, or a StoX 2.7 \code{project.xml} holding the
 strata), both relative to \code{NANSEN_DATA_ROOT};

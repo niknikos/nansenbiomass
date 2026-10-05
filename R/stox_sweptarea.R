@@ -671,6 +671,31 @@ inclusion_summary <- function(config, root = data_root()) {
   )
 }
 
+# `survey.label: auto` and `survey.year: auto` take the survey number (the cruise of the
+# mission) and the year from the biotic files. One survey only: several, or none, is refused.
+resolve_survey_id <- function(cfg, survey) {
+  if (identical(cfg$survey$label, "auto")) {
+    id <- unique(stats::na.omit(as.character(survey$mission$cruise)))
+    if (length(id) != 1L) {
+      nb_abort("SX-LABEL-01", paste0("survey.label is auto, but the biotic files hold ", length(id),
+                                     " survey numbers (cruise); exactly one is needed."))
+    }
+    if (!grepl("^[A-Za-z0-9._-]+$", id)) {
+      nb_abort("SX-LABEL-02", "The survey number of the biotic file has characters that a label cannot hold.")
+    }
+    cfg$survey$label <- id
+  }
+  if (identical(cfg$survey$year, "auto")) {
+    yr <- unique(stats::na.omit(suppressWarnings(as.integer(survey$station$startyear))))
+    if (length(yr) != 1L) {
+      nb_abort("SX-LABEL-03", paste0("survey.year is auto, but the stations hold ", length(yr),
+                                     " start years; exactly one is needed."))
+    }
+    cfg$survey$year <- yr
+  }
+  cfg
+}
+
 # Applies the inclusion rules (D-09) to the station table. The single source of
 # truth for which stations are kept: inclusion_summary() reports counts from it
 # and the StoX project is built from the same result. The returned `keep`,
@@ -875,7 +900,6 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
   files <- vapply(cfg$data$biotic, resolve_data_path, character(1), root = root, USE.NAMES = FALSE)
   strata_file <- resolve_data_path(cfg$data$strata, root)
   run_label <- paste0(format(Sys.time(), "%Y%m%dT%H%M%SZ", tz = "UTC"), "-", substr(hash, 1, 8))
-  project_path <- file.path(root, "stox", cfg$survey$label, run_label)
   log_dir <- file.path(root, "logs")
   run_log <- file.path(log_dir, paste0("run_estimate-", run_label, ".log"))
 
@@ -884,6 +908,8 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       check_stox_ready(cfg)
       survey <- read_biotic(files)
       check_station_keys(survey)
+      cfg <- resolve_survey_id(cfg, survey)
+      project_path <- file.path(root, "stox", cfg$survey$label, run_label)
       polygons <- read_strata_polygons(strata_file, cfg$data$stratum_label)
       exclude <- read_station_exclusions(cfg, root)
       cfg <- resolve_strata_names(cfg, polygons, survey$station, exclude)

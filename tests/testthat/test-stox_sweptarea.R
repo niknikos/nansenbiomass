@@ -1236,6 +1236,24 @@ test_that("a selected stratum that is not sampled stays in the estimates with an
   }
 })
 
+test_that("survey.label and survey.year can follow the biotic file", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  cfg <- quick_config(2L)
+  cfg$survey$label <- "auto"; cfg$survey$year <- "auto"
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  cruise <- unique(as.character(s$sv$survey$mission$cruise))
+  expect_equal(unique(res$estimates$survey_id), cruise)
+  expect_equal(unique(res$estimates$year), as.integer(unique(s$sv$survey$station$startyear)))
+  expect_true(grepl(file.path("stox", cruise), res$project_path, fixed = TRUE))
+  # two surveys in the files are refused
+  two <- s$sv$survey
+  two$mission <- rbind(two$mission, transform(two$mission, cruise = paste0(cruise, "X")))
+  expect_error(resolve_survey_id(cfg, two), "SX-LABEL-01")
+  raw <- yaml::read_yaml(example_config()); raw$survey$year <- "later"
+  expect_error(validate_config(raw), "CF-TYPE-01")
+})
+
 test_that("a selection that cannot be applied is refused", {
   s <- synthetic_root()
   x <- quick_config(); x$data$stratum_names <- c("SYN-A", "NOT-THERE")
