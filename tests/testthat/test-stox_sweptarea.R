@@ -840,6 +840,13 @@ test_that("saved report files are read, and an official table can stand in for x
   expect_equal(cmp$ratio, c(1, 3 / 3.3), tolerance = 1e-9)
 })
 
+test_that("a cell that appears in several report tables is compared once", {
+  one <- data.frame(Stratum = "A", SpeciesCategory = "x/SP1/NA/s", Abundance_sum = 2e6)
+  a <- official_reports_to_table(list(R1 = one, R2 = one))
+  b <- official_reports_to_table(list(R1 = one, R2 = one, R3 = one))
+  expect_equal(nrow(compare_estimates(a, b, "baseline", species = "SP1")), 1L)
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))

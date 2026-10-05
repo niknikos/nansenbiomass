@@ -402,6 +402,11 @@ compare_estimates <- function(x, reference, reference_value = c("baseline", "mea
   y$species_code <- if (all(is.na(y$species_category))) NA_character_ else
     species_from_category(y$species_category, unique(x$species_code))
   y$reference <- y[[reference_value]]
+  # The same cell can appear in several report tables of a project (for example one by stratum
+  # and one by stratum and length); a cell is compared once.
+  y <- y[!duplicated(y[c("quantity", "stratum", "species_code", "reference")]), , drop = FALSE]
+  x <- as.data.frame(x)
+  x <- x[!duplicated(x[c("quantity", "stratum", "species_code", "value")]), , drop = FALSE]
   y$reference_cv <- if ("cv" %in% names(y)) y$cv else NA_real_
   if (!is.null(replicates) && (!is.numeric(replicates) || !length(replicates) %in% 1:2 || any(replicates < 2))) {
     nb_abort("SX-CMP-03", "`replicates` must be one or two numbers of bootstrap replicates, at least 2.")
