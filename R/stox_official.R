@@ -356,8 +356,13 @@ compare_estimates <- function(x, reference, reference_value = c("baseline", "mea
 print.nb_comparison <- function(x, ...) {
   cat(sprintf("<nb_comparison> ratios of our estimate to the reference; tolerance %.3g\n",
               attr(x, "tolerance")))
-  cat(sprintf("%d compared, %d within tolerance; ratio min %.4g, median %.4g, max %.4g\n",
-              nrow(x), sum(x$within), min(x$ratio), stats::median(x$ratio), max(x$ratio)))
+  if (all(c("within", "ratio") %in% names(x)) && any(!is.na(x$ratio))) {
+    cat(sprintf("%d rows, %d with a ratio, %d within tolerance; ratio min %.4g, median %.4g, max %.4g\n",
+                nrow(x), sum(!is.na(x$ratio)), sum(x$within, na.rm = TRUE), min(x$ratio, na.rm = TRUE),
+                stats::median(x$ratio, na.rm = TRUE), max(x$ratio, na.rm = TRUE)))
+  } else {
+    cat(sprintf("%d rows\n", nrow(x)))
+  }
   y <- x
   class(y) <- setdiff(class(y), "nb_comparison")
   print(tibble::as_tibble(y), n = Inf)

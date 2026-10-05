@@ -866,7 +866,7 @@ test_that("compare_estimates() reports ratios, flags, and refuses empty comparis
   expect_equal(cmp$within[cmp$stratum == "total"], FALSE)            # 5.5 against 5 is outside 1%
   expect_equal(cmp$ratio[cmp$species_code == "SP2"], 1)
   expect_true(all(is.na(cmp$cv_ratio)))                              # the reference has no CV
-  expect_output(print(cmp), "3 compared, 2 within tolerance")
+  expect_output(print(cmp), "3 rows, 3 with a ratio, 2 within tolerance")
   expect_equal(compare_estimates(ours, ref, tolerance = 0.2)$within, rep(TRUE, 3))
   expect_error(compare_estimates(ours, ref, "mean"), "SX-CMP-01")    # no bootstrap values
   other <- ref; other$stratum <- "Z"
