@@ -847,6 +847,36 @@ test_that("a cell that appears in several report tables is compared once", {
   expect_equal(nrow(compare_estimates(a, b, "baseline", species = "SP1")), 1L)
 })
 
+test_that("stox_fit_check() accepts a project made by the template and flags what it cannot reproduce", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  cfg <- quick_config(2L); cfg$biomass$method <- "super_individuals"; cfg$lengths$interval_cm <- 2
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  rel_project <- sub(paste0("^", normalizePath(s$root, winslash = "/"), "/"), "",
+                     normalizePath(res$project_path, winslash = "/"))
+  fit <- stox_fit_check(rel_project, root = s$root)
+  expect_s3_class(fit, "nb_stox_fit")
+  expect_false(any(fit$checks$status == "not supported"))
+  expect_equal(fit$checks$status[fit$checks$feature == "Sampling units (PSUs)"], "supported")
+  expect_match(fit$checks$detail[fit$checks$feature == "Biomass"], "super-individuals")
+  expect_output(print(fit), "Verdict:")
+  expect_false(grepl(s$root, paste(utils::capture.output(print(fit)), collapse = "\n"), fixed = TRUE))
+
+  # a description altered the way a project that does not fit would be
+  d <- describe_stox_project(rel_project, root = s$root)
+  alter <- function(f) { d2 <- d; d2$processes <- f(d2$processes); stox_fit_rows(d2) }
+  status <- function(x, feat) x$status[x$feature == feat]
+  w <- alter(function(p) { p$value[p$parameter == "SweepWidthMethod"] <- "PreDefined"; p })
+  expect_equal(status(w, "Sweep width"), "not supported")
+  f <- alter(function(p) { p$fields[p$parameter == "FilterExpression$Haul"] <- "HaulKey, Cruise"; p })
+  expect_equal(status(f, "Filters"), "check")
+  expect_match(f$detail[f$feature == "Filters"], "cruise")
+  d3 <- d; d3$process_tables$n_entries[d3$process_tables$table == "Stratum_PSU"] <- 20L
+  expect_equal(status(stox_fit_rows(d3), "Sampling units (PSUs)"), "not supported")
+  o <- alter(function(p) { p$`function`[p$process == "StratumArea"] <- "RstoxBase::SomethingNew"; p })
+  expect_match(o$detail[o$feature == "Other processes"], "SomethingNew")
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))

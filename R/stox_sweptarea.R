@@ -174,6 +174,7 @@ describe_stox_json <- function(file) {
   versions <- if (length(versions)) versions else NA_character_
   rows <- list()
   data_rows <- list()
+  table_rows <- list()
   for (model in names(j$models)) {
     procs <- j$models[[model]]
     for (i in seq_along(procs)) {
@@ -210,10 +211,19 @@ describe_stox_json <- function(file) {
         data_rows[[length(data_rows) + 1L]] <- tibble::tibble(
           section = model, element = safe_field_names(pname), n_entries = n_data
         )
+        tn <- names(p$processData)
+        if (length(tn) == length(p$processData)) {
+          table_rows[[length(table_rows) + 1L]] <- tibble::tibble(
+            process = safe_field_names(pname), table = safe_field_names(tn),
+            n_entries = vapply(p$processData, function(t) if (is.list(t)) length(t) else 1L, integer(1)))
+        }
       }
     }
   }
-  new_stox_description("StoX >= 3 (project.json)", versions, rows, data_rows)
+  d <- new_stox_description("StoX >= 3 (project.json)", versions, rows, data_rows)
+  d$process_tables <- if (length(table_rows)) dplyr::bind_rows(table_rows) else
+    tibble::tibble(process = character(), table = character(), n_entries = integer())
+  d
 }
 
 describe_stox_xml <- function(file) {
@@ -1007,4 +1017,219 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
     code = "SX-RUN-01",
     message = "The estimate could not be completed."
   )
+}
+
+# ---- Does an official project fit the template? ------------------------------------------
+
+# Functions of the baseline model that the template covers (or, for the rest, that a person must look at)
+stox_known_functions <- c(
+  "ReadBiotic", "StoxBiotic", "TranslateStoxBiotic", "DefineTranslation", "FilterStoxBiotic",
+  "DefineStratumPolygon", "DefineSurvey", "DefineBioticPSU", "DefineBioticLayer",
+  "LengthDistribution", "RegroupLengthDistribution", "SumLengthDistribution",
+  "MeanLengthDistribution", "SweptAreaDensity", "MeanDensity", "Quantity", "StratumArea",
+  "Individuals", "SuperIndividuals", "ImputeSuperIndividuals", "SpeciesCategoryCatch",
+  "MeanSpeciesCategoryCatch"
+)
+
+# Fields that the inclusion rules of the template can reproduce
+stox_supported_filter_fields <- c("gear", "gearcondition", "samplequality", "stationtype", "station",
+                                  "haulkey", "speciescategory", "effectivetowdistance")
+
+stox_fit_rows <- function(d) {
+  p <- d$processes
+  p$fun <- sub("^.*::", "", p$`function`)
+  rows <- list()
+  add <- function(feature, status, detail) {
+    rows[[length(rows) + 1L]] <<- tibble::tibble(feature = feature, status = status, detail = detail)
+  }
+  vals <- function(fun, par, model = NULL) {
+    h <- p[p$fun == fun & grepl(par, p$parameter), , drop = FALSE]
+    if (!is.null(model)) h <- h[h$model == model, , drop = FALSE]
+    v <- h$value[!is.na(h$value) & nzchar(h$value)]
+    v
+  }
+  has <- function(fun) any(p$fun == fun)
+  one <- function(v) if (length(v)) paste(unique(v), collapse = ", ") else ""
+
+  # Version
+  v <- d$versions[!is.na(d$versions)]
+  made <- if (length(v)) paste(v, collapse = "; ") else "not recorded"
+  is4 <- any(grepl("RstoxFramework_[4-9]", v)); is3 <- any(grepl("RstoxFramework_3", v))
+  add("StoX version of the project",
+      if (is4 || is3) "supported" else "check",
+      paste0("made with ", made, "; the template runs it under RstoxFramework ", stox_pinned_version,
+             if (is3) " (the 3.4 conversion has been tested)" else if (!is4) " (older projects are not tested)" else ""))
+
+  # Biotic files
+  nf <- sum(p$fun == "ReadBiotic" & grepl("^FileNames", p$parameter))
+  add("Biotic files",
+      if (nf == 0L) "check" else if (nf == 1L) "supported" else "check",
+      if (nf == 0L) "no ReadBiotic file list found" else if (nf == 1L) "one biotic file" else
+        paste0(nf, " biotic file entries; the template is tested with one file (station keys must be unique across files)"))
+
+  # Filters
+  fl <- p[p$fun == "FilterStoxBiotic" & grepl("^FilterExpression", p$parameter), , drop = FALSE]
+  if (nrow(fl) == 0L) {
+    add("Filters", "supported", "no filter on the StoxBiotic data")
+  } else {
+    fields <- unique(tolower(trimws(unlist(strsplit(stats::na.omit(fl$fields), ",")))))
+    fields <- fields[nzchar(fields)]
+    levels <- tolower(unique(sub("^FilterExpression[^A-Za-z]*([A-Za-z]+).*$", "\\1", fl$parameter)))
+    other <- setdiff(fields, stox_supported_filter_fields)
+    deep <- intersect(levels, c("individual", "sample"))
+    add("Filters",
+        if (length(other) || length(deep)) "check" else "supported",
+        paste0("fields used: ", if (length(fields)) paste(fields, collapse = ", ") else "none read",
+               if (length(other)) paste0("; not reproduced by the inclusion rules: ", paste(other, collapse = ", ")) else "",
+               if (length(deep)) "; a filter at sample or individual level is not reproduced" else ""))
+  }
+
+  # Translation
+  if (has("TranslateStoxBiotic") || has("DefineTranslation")) {
+    add("Translation of StoxBiotic variables", "check",
+        "the project translates variables; the template reproduces only the recovery of tow distances")
+  }
+
+  # Strata
+  if (has("DefineStratumPolygon")) {
+    add("Strata", "supported",
+        paste0("method ", one(vals("DefineStratumPolygon", "^DefinitionMethod$")),
+               "; read by stox_strata() from the file or the project's own data"))
+  } else add("Strata", "check", "no DefineStratumPolygon process")
+
+  # Survey definition
+  sm <- vals("DefineSurvey", "^DefinitionMethod$")
+  add("Survey definition (what counts towards the total)", if (!length(sm) || all(sm %in% c("AllStrata", "Table"))) "supported" else "check",
+      if (length(sm)) paste0("method ", one(sm)) else "no DefineSurvey process")
+
+  # PSUs
+  pm <- vals("DefineBioticPSU", "^DefinitionMethod$")
+  pt <- d$process_tables
+  n_st <- if (!is.null(pt)) sum(pt$n_entries[grepl("Station_PSU", pt$table)]) else NA
+  n_psu <- if (!is.null(pt)) sum(pt$n_entries[grepl("Stratum_PSU", pt$table)]) else NA
+  if (!has("DefineBioticPSU")) {
+    add("Sampling units (PSUs)", "check", "no DefineBioticPSU process")
+  } else if (is.na(n_st) || n_st == 0L) {
+    add("Sampling units (PSUs)", "check", "the PSU tables could not be counted; the template makes one PSU per station")
+  } else if (n_st == n_psu) {
+    add("Sampling units (PSUs)", "supported", paste0("one PSU per station (", n_st, " stations, ", n_psu, " PSUs)"))
+  } else {
+    add("Sampling units (PSUs)", "not supported",
+        paste0(n_st, " stations are grouped into ", n_psu, " PSUs; the template makes one PSU per station"))
+  }
+
+  # Layers
+  lm <- vals("DefineBioticLayer", "^DefinitionMethod$")
+  add("Depth layers", if (!length(lm) || all(lm == "WaterColumn")) "supported" else "not supported",
+      if (length(lm)) paste0("method ", one(lm), if (all(lm == "WaterColumn")) " (one layer for the water column)" else "; the template uses the whole water column") else "no layer definition")
+
+  # Length distribution
+  ld <- vals("LengthDistribution", "^LengthDistributionType$")
+  rp <- vals("LengthDistribution", "^RaisingFactorPriority$")
+  add("Length distribution",
+      if (!length(ld) || (all(ld == "Normalized") && (!length(rp) || all(rp %in% c("Weight", "Number"))))) "supported" else "not supported",
+      paste0("type ", if (length(ld)) one(ld) else "default", "; raising factor priority ", if (length(rp)) one(rp) else "default"))
+  rg <- vals("RegroupLengthDistribution", "^LengthInterval$")
+  add("Length regrouping", "supported", if (length(rg)) paste0("interval ", one(rg), " cm") else "not used")
+
+  # Sweep width and density
+  sw <- vals("SweptAreaDensity", "^SweepWidthMethod$")
+  swv <- vals("SweptAreaDensity", "^SweepWidth$")
+  add("Sweep width", if (!length(sw) || all(sw == "Constant")) "supported" else "not supported",
+      paste0("method ", if (length(sw)) one(sw) else "not found",
+             if (length(swv) && all(sw == "Constant")) paste0(", ", one(swv), " m") else "",
+             if (length(sw) && any(sw != "Constant")) "; the template takes a constant width only" else ""))
+  sd_m <- vals("SweptAreaDensity", "^SweptAreaDensityMethod$")
+  dt <- vals("SweptAreaDensity", "^DensityType$")
+  add("Density", if ((!length(sd_m) || all(sd_m == "LengthDistributed")) && (!length(dt) || all(dt == "AreaNumberDensity"))) "supported" else "check",
+      paste0("method ", if (length(sd_m)) one(sd_m) else "not found", ", type ", if (length(dt)) one(dt) else "not found",
+             "; the template uses length-distributed number density"))
+
+  # Biomass route
+  si <- has("Individuals") && has("SuperIndividuals") && has("ImputeSuperIndividuals")
+  cc <- has("SpeciesCategoryCatch")
+  if (si) {
+    dm <- vals("SuperIndividuals", "^DistributionMethod$"); im <- vals("ImputeSuperIndividuals", "^ImputationMethod$")
+    ok <- (!length(dm) || all(dm %in% c("Equal", "HaulDensity"))) && (!length(im) || all(im == "RandomSampling"))
+    add("Biomass", if (ok) "supported" else "not supported",
+        paste0("super-individuals (distribution ", if (length(dm)) one(dm) else "default", ", imputation ",
+               if (length(im)) one(im) else "default", ")",
+               if (!ok) "; the template supports Equal or HaulDensity with random-sampling imputation" else ""))
+  } else if (cc) {
+    add("Biomass", "supported", "from catch weights (SpeciesCategoryCatch)")
+  } else {
+    add("Biomass", "check", "no biomass chain in the project; configure abundance only")
+  }
+
+  # Bootstrap
+  if (has("Bootstrap")) {
+    rf <- vals("Bootstrap", "ResampleFunction")
+    ok <- all(rf %in% c("ResampleMeanLengthDistributionData", "ResampleMeanSpeciesCategoryCatchData"))
+    nb <- vals("Bootstrap", "^NumberOfBootstrap")
+    add("Bootstrap", if (ok) "supported" else "check",
+        paste0(if (length(nb)) paste0(one(nb), " replicates; ") else "", "resampling: ",
+               if (length(rf)) one(rf) else "not read",
+               if (!ok) "; other resampling functions are not reproduced" else ""))
+  } else add("Bootstrap", "check", "no Bootstrap process; the template reports a bootstrap")
+
+  # Anything else in the baseline
+  base_funs <- unique(p$fun[p$model == "baseline"])
+  extra <- setdiff(base_funs, stox_known_functions)
+  if (length(extra)) {
+    add("Other processes", "check", paste0("not covered by the template: ", paste(extra, collapse = ", ")))
+  }
+  dplyr::bind_rows(rows)
+}
+
+#' Check whether an official StoX project fits the template
+#'
+#' Reads the structure of an official StoX project (as [describe_stox_project()] does, without
+#' any of its data) and states, feature by feature, whether the swept-area template of this
+#' package can reproduce it: `supported`, `check` (a person has to look at it) or
+#' `not supported`. It reads settings and counts only: no file path, expression or station key
+#' is shown. Use it before configuring a new survey; it does not replace the comparison with
+#' the official results.
+#'
+#' The checks cover the version, the number of biotic files, the filters, translations, strata,
+#' the survey definition, the sampling units (one per station), depth layers, the length
+#' distribution, regrouping, sweep width, the density, the biomass route, the bootstrap and any
+#' processes of the baseline model that the template does not have. Weighting and layer settings
+#' of the mean steps are not checked.
+#'
+#' @inheritParams describe_stox_project
+#' @return An `nb_stox_fit`: a list with `checks` (a tibble with `feature`, `status` and
+#'   `detail`) and `verdict` (`fits`, `fits with checks` or `does not fit`).
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(file.path(root, "synthetic", "process"), recursive = TRUE)
+#' jsonlite::write_json(
+#'   list(project = list(
+#'     RstoxPackageVersion = list("RstoxFramework_4.2.1"),
+#'     models = list(baseline = list(list(
+#'       processName = "SweptAreaDensity",
+#'       functionName = "RstoxBase::SweptAreaDensity",
+#'       functionParameters = list(SweepWidthMethod = "Constant", SweepWidth = 20)
+#'     )))
+#'   )),
+#'   file.path(root, "synthetic", "process", "project.json"), auto_unbox = TRUE
+#' )
+#' stox_fit_check("synthetic", root = root)
+stox_fit_check <- function(path, root = data_root()) {
+  d <- describe_stox_project(path, root = root)
+  checks <- stox_fit_rows(d)
+  verdict <- if (any(checks$status == "not supported")) "does not fit" else
+    if (any(checks$status == "check")) "fits with checks" else "fits"
+  structure(list(format = d$format, checks = checks, verdict = verdict), class = "nb_stox_fit")
+}
+
+#' @export
+print.nb_stox_fit <- function(x, ...) {
+  cat("<nb_stox_fit> settings and counts only;", x$format, "\n")
+  cat("Verdict:", x$verdict, "\n")
+  mark <- c(supported = "[ok]   ", check = "[check]", `not supported` = "[NO]   ")
+  for (i in seq_len(nrow(x$checks))) {
+    cat(sprintf("%s %s: %s\n", mark[[x$checks$status[i]]], x$checks$feature[i], x$checks$detail[i]))
+  }
+  invisible(x)
 }

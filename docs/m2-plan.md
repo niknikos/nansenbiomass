@@ -472,6 +472,17 @@ project lead; the numbers below are ratios, never values.
   saving the generated project (`process/project.json`), `data.stratum_regions`, NA rows for strata without
   stations, zero rows for sampled strata without catch.
 
+**Fit check for further official projects (5 October 2026).** Before more official projects are reproduced,
+`stox_fit_check(project)` reads a project's structure (settings and counts only, as `describe_stox_project()`
+does) and says feature by feature whether the template can reproduce it: `supported`, `check` (a person has
+to look) or `not supported`. It covers the version, the number of biotic files, the filters (fields
+the inclusion rules can reproduce), translations, strata, the survey definition, the sampling units (one PSU
+per station, from the counts of the PSU tables), depth layers, the length distribution, regrouping, the
+sweep width, the density, the biomass route, the bootstrap, and any baseline process the template does not
+have. Weighting and layer settings of the mean steps are not checked. The description of a project now
+also carries the entry counts per process-data table (`process_tables`). `survey.label` and `survey.year`
+may be `auto` (survey number from the `cruise` element of the biotic file, year from the stations).
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
