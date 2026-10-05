@@ -435,6 +435,39 @@ not describe every stratum name is refused (`SX-STRATA-07`). The rule rests on o
 person should check in the counts: a stray station (for example on a transit) in another region would bring
 that region in; `inclusion_summary()` shows the strata and the stations kept in each.
 
+**First reproduction, real survey A (5 October 2026; ratios and counts only).** Run on the laptop by the
+project lead; the numbers below are ratios, never values.
+
+- *Inclusion.* 145 stations in the file; 144 after sample quality, 142 after the two-station exclusion list
+  (2 listed, 2 matched, 0 unmatched), 141 inside the strata. All 8 regions have stations, so all 56 strata
+  are selected: 41 have stations and an estimate, 15 have none and are NA. This agrees with the survey
+  report (144 stations with biomass).
+- *Version gap (L1), baseline total abundance.* The original StoX 3.4 report files against the 4.2.1 rerun
+  of a copy of the official project: ratio 1.000 (relative difference 8e-12). The saved 3.4 outputs cannot
+  be read through `getModelData()` under 4.2.1 (all NULL); the report text files in `output/report/` can
+  (`stox_saved_reports()`).
+- *Our template (L2), baseline total abundance.* `run_estimate()` against the 4.2.1 rerun: ratio 1.000. The
+  abundance chain, the stations, the strata and the sweep width are therefore the official ones.
+- *Bootstrap means.* Same settings in both projects (compared line by line: resampled process, seeds 1 and 5,
+  output process, `UseOutputData`); only the draws differ. Ours (100 replicates) against the rerun (100):
+  total abundance 0.972, total biomass 0.975, z -1.06 and -1.22; 92% of cells have |z| < 2, mean z -0.16.
+  Ours (100) against the original 3.4 means (1000): totals 0.978 and 0.980, z -1.09 and -1.24; 92% of 50 cells
+  have |z| < 2 (range -2.2 to 2.7), mean z 0.10. Strata with one station agree to 1e-11, as they must (no
+  resampling variability). The differences are of the size that two independent sets of bootstrap draws give
+  (the SE of a bootstrap mean is the CV over the square root of the replicates, about 2.4% for the total at
+  100 replicates), so they are read as Monte Carlo noise, not as a difference in method. Why the draws differ
+  with identical settings (PSU order, random streams over cores) was not established; it does not affect the
+  estimator.
+- *Consequence for D-11.* A bootstrap mean cannot be reproduced to within 1% by an independent run even with
+  1000 replicates (SE about 1% for two runs at 1000); the tolerance for bootstrap means has to be stated in
+  units of the Monte Carlo error (|z| below about 2, as `compare_estimates(replicates = )` reports), while the
+  baseline abundance is reproduced exactly. For the project lead to decide.
+- *Not established.* Biomass has no baseline in the official project, so only its bootstrap total could be
+  compared. Whether the published figures are bootstrap means or baseline values is not yet known.
+- *Tools added during this work.* `stox_saved_reports()`, `compare_estimates(replicates = , species = )`,
+  saving the generated project (`process/project.json`), `data.stratum_regions`, NA rows for strata without
+  stations, zero rows for sampled strata without catch.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.
