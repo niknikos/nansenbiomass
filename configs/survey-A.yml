@@ -47,7 +47,7 @@ bootstrap:
   seed: 1
   impute_seed: 5             # BaselineSeedTable of the project
 estimate:
-  point: bootstrap_mean      # to confirm: published figures are bootstrap means (the project's reports are)
+  point: bootstrap_mean      # confirmed 5 October 2026: the published figures are bootstrap means
 stox:
   version: 4.2.1
 disclosure:

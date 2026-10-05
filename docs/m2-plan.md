@@ -462,8 +462,12 @@ project lead; the numbers below are ratios, never values.
   1000 replicates (SE about 1% for two runs at 1000); the tolerance for bootstrap means has to be stated in
   units of the Monte Carlo error (|z| below about 2, as `compare_estimates(replicates = )` reports), while the
   baseline abundance is reproduced exactly. For the project lead to decide.
+- *Published figures.* Confirmed by the project lead on 5 October 2026, from the project's report files
+  (`Report_Sum_Biomass`, `Report_Sum_Abundance`, column `..._sum_mean`) against the published totals: the
+  published figures are bootstrap means. `estimate.point: bootstrap_mean` in `configs/survey-A.yml` is
+  therefore right, and the comparison with the originals is the bootstrap one above.
 - *Not established.* Biomass has no baseline in the official project, so only its bootstrap total could be
-  compared. Whether the published figures are bootstrap means or baseline values is not yet known.
+  compared; the survey label and year in the configuration are still marked "to confirm".
 - *Tools added during this work.* `stox_saved_reports()`, `compare_estimates(replicates = , species = )`,
   saving the generated project (`process/project.json`), `data.stratum_regions`, NA rows for strata without
   stations, zero rows for sampled strata without catch.
