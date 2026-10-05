@@ -360,6 +360,11 @@ test_that("run_estimate() reproduces the direct estimate and stages a passing ex
                                     "estimates.csv")))
   expect_false(any(grepl("outbox", list.dirs(s$root), ignore.case = TRUE)))
   expect_true(dir.exists(res$project_path))
+  # the project is saved, so it can be described and compared with an official one
+  rel_project <- sub(paste0("^", normalizePath(s$root, winslash = "/"), "/"), "",
+                     normalizePath(res$project_path, winslash = "/"))
+  saved <- describe_stox_project(rel_project, root = s$root)
+  expect_true("Bootstrap" %in% saved$processes$process)
 
   # Section 9 fields and values
   expect_setequal(names(est), estimate_schema()$field)

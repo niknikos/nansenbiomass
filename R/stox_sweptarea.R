@@ -931,6 +931,11 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
         run_log
       )
 
+      # StoX keeps the process list in memory until the project is saved; saving writes
+      # process/project.json, so the project can be described, compared and opened in StoX.
+      tryCatch(RstoxFramework::saveProject(project_path),
+               error = function(e) nb_warn("SX-SAVE-01", "The StoX project could not be saved."))
+
       # The stations StoX kept must be the stations the rules kept.
       hauls <- r$FilterStoxBiotic$Haul
       if (nrow(hauls) != sum(inc$keep)) {
