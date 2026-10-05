@@ -318,8 +318,12 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
 #' @param reference_value `baseline` or `mean` (the bootstrap mean): which
 #'   reference value to compare our `value` with.
 #' @param tolerance Relative tolerance for the flag `within`.
+#' @param replicates Number of bootstrap replicates behind each of two bootstrap means
+#'   (compared with `reference_value = "mean"`). When given, the table gets `z`, the
+#'   difference in units of its expected Monte Carlo standard error; |z| below about 2
+#'   is what two independent sets of random draws would give by chance.
 #' @return An `nb_comparison` tibble with `quantity`, `stratum`, `species_code`,
-#'   `ratio`, `rel_diff`, `within` and `cv_ratio`.
+#'   `ratio`, `rel_diff`, `within`, `cv_ratio` and, with `replicates`, `z`.
 #' @export
 #' @examples
 #' ours <- tibble::tibble(species_code = "SP1", stratum = c("A", "total"), quantity = "biomass",
@@ -327,7 +331,8 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
 #' reference <- official_reports_to_table(list(R = data.frame(
 #'   Stratum = "A", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 2e6)))
 #' compare_estimates(ours, reference)
-compare_estimates <- function(x, reference, reference_value = c("baseline", "mean"), tolerance = 0.01) {
+compare_estimates <- function(x, reference, reference_value = c("baseline", "mean"), tolerance = 0.01,
+                              replicates = NULL) {
   reference_value <- match.arg(reference_value)
   kind <- if (reference_value == "mean") "bootstrap" else "baseline"
   if (!reference_value %in% names(reference)) {
@@ -339,17 +344,25 @@ compare_estimates <- function(x, reference, reference_value = c("baseline", "mea
     species_from_category(y$species_category, unique(x$species_code))
   y$reference <- y[[reference_value]]
   y$reference_cv <- if ("cv" %in% names(y)) y$cv else NA_real_
+  if (!is.null(replicates) && (!is.numeric(replicates) || length(replicates) != 1L || replicates < 2)) {
+    nb_abort("SX-CMP-03", "`replicates` must be one number of bootstrap replicates, at least 2.")
+  }
   by <- c("quantity", "stratum", if (!all(is.na(y$species_code))) "species_code")
   m <- merge(as.data.frame(x)[c("species_code", "stratum", "quantity", "value", "cv")],
              as.data.frame(y)[c(by, "reference", "reference_cv")], by = by)
   if (nrow(m) == 0L) nb_abort("SX-CMP-02", "No quantity and stratum is in both tables.")
   m$ratio <- m$value / m$reference
-  structure(
-    tibble::tibble(quantity = m$quantity, stratum = m$stratum, species_code = m$species_code,
-                   ratio = m$ratio, rel_diff = m$ratio - 1, within = abs(m$ratio - 1) <= tolerance,
-                   cv_ratio = m$cv / m$reference_cv),
-    tolerance = tolerance, class = c("nb_comparison", "tbl_df", "tbl", "data.frame")
-  )
+  out <- tibble::tibble(quantity = m$quantity, stratum = m$stratum, species_code = m$species_code,
+                        ratio = m$ratio, rel_diff = m$ratio - 1, within = abs(m$ratio - 1) <= tolerance,
+                        cv_ratio = m$cv / m$reference_cv)
+  # Two bootstrap means from independent random draws differ by Monte Carlo noise: z is the
+  # difference in units of its expected standard error, from the two bootstrap SDs
+  # (SD = CV x mean) and the number of replicates. |z| below about 2 is consistent with noise.
+  if (!is.null(replicates)) {
+    se <- sqrt((m$cv * m$value)^2 + (m$reference_cv * m$reference)^2) / sqrt(replicates)
+    out$z <- ifelse(is.finite(se) & se > 0, (m$value - m$reference) / se, NA_real_)
+  }
+  structure(out, tolerance = tolerance, class = c("nb_comparison", "tbl_df", "tbl", "data.frame"))
 }
 
 #' @export

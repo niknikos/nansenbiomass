@@ -806,6 +806,19 @@ test_that("an exclusion file leaves the listed stations out of the counts and of
   expect_false(grepl("serial|exclu", paste(readLines(est_file), collapse = "\n"), ignore.case = TRUE))
 })
 
+test_that("compare_estimates() gives z in units of the Monte Carlo standard error", {
+  ours <- tibble::tibble(species_code = "SP1", stratum = "A", quantity = "biomass",
+                         value = 110, cv = 0.5)
+  reference <- official_reports_to_table(list(R = data.frame(
+    Stratum = "A", SpeciesCategory = "n/SP1/NA/s", Biomass_sum_mean = 1e8, Biomass_sum_sd = 5e7,
+    Biomass_sum_cv = 0.5)))
+  cmp <- compare_estimates(ours, reference, "mean", replicates = 100)
+  se <- sqrt(55^2 + 50^2) / 10
+  expect_equal(cmp$z, 10 / se, tolerance = 1e-9)
+  expect_false("z" %in% names(compare_estimates(ours, reference, "mean")))
+  expect_error(compare_estimates(ours, reference, "mean", replicates = 1), "SX-CMP-03")
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))

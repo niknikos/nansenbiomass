@@ -8,7 +8,8 @@ compare_estimates(
   x,
   reference,
   reference_value = c("baseline", "mean"),
-  tolerance = 0.01
+  tolerance = 0.01,
+  replicates = NULL
 )
 }
 \arguments{
@@ -20,10 +21,15 @@ compare_estimates(
 reference value to compare our \code{value} with.}
 
 \item{tolerance}{Relative tolerance for the flag \code{within}.}
+
+\item{replicates}{Number of bootstrap replicates behind each of two bootstrap means
+(compared with \code{reference_value = "mean"}). When given, the table gets \code{z}, the
+difference in units of its expected Monte Carlo standard error; |z| below about 2
+is what two independent sets of random draws would give by chance.}
 }
 \value{
 An \code{nb_comparison} tibble with \code{quantity}, \code{stratum}, \code{species_code},
-\code{ratio}, \code{rel_diff}, \code{within} and \code{cv_ratio}.
+\code{ratio}, \code{rel_diff}, \code{within}, \code{cv_ratio} and, with \code{replicates}, \code{z}.
 }
 \description{
 Compares a Section 9 table (from \code{\link[=run_estimate]{run_estimate()}}) with a table of reference
