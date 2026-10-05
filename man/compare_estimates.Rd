@@ -9,11 +9,13 @@ compare_estimates(
   reference,
   reference_value = c("baseline", "mean"),
   tolerance = 0.01,
-  replicates = NULL
+  replicates = NULL,
+  species = NULL
 )
 }
 \arguments{
-\item{x}{Our estimates (a Section 9 table).}
+\item{x}{Our estimates (a Section 9 table), or a table from \code{\link[=official_reports_to_table]{official_reports_to_table()}}
+(then \code{species} is needed), for example the saved reports of the original project.}
 
 \item{reference}{A table from \code{\link[=official_reports_to_table]{official_reports_to_table()}}.}
 
@@ -26,6 +28,9 @@ reference value to compare our \code{value} with.}
 (compared with \code{reference_value = "mean"}). When given, the table gets \code{z}, the
 difference in units of its expected Monte Carlo standard error; |z| below about 2
 is what two independent sets of random draws would give by chance.}
+
+\item{species}{Species codes, used to pick the species out of StoX category names when \code{x}
+is an official table.}
 }
 \value{
 An \code{nb_comparison} tibble with \code{quantity}, \code{stratum}, \code{species_code},

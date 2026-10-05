@@ -304,6 +304,52 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
   tibble::as_tibble(dplyr::bind_rows(rows))
 }
 
+#' Read the report files a StoX project has written
+#'
+#' StoX writes each report of a project as a text file in `output/report/`. These plain
+#' files do not depend on the StoX version, so they give the reports an older project
+#' produced (for example with StoX 3.4) when the newer packages cannot read the project's
+#' stored outputs. The result has the layout [official_reports_to_table()] takes.
+#'
+#' @param project Path, relative to `root`, of the StoX project folder.
+#' @inheritParams read_survey
+#' @return An `nb_saved_reports`: a named list of data frames, one per report process.
+#'   Printing shows names and row counts only.
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(file.path(root, "p", "output", "report", "R1"), recursive = TRUE)
+#' utils::write.table(data.frame(Stratum = "A", SpeciesCategory = "x/SP1/NA/s", Abundance_sum = 1e6),
+#'                    file.path(root, "p", "output", "report", "R1", "ReportData.txt"),
+#'                    sep = "\t", row.names = FALSE, quote = FALSE)
+#' stox_saved_reports("p", root = root)
+stox_saved_reports <- function(project, root = data_root()) {
+  with_sanitised_errors(
+    {
+      dir <- file.path(resolve_data_path(project, root), "output", "report")
+      if (!dir.exists(dir)) nb_abort("SX-SAVED-01", "The project has no output/report folder.")
+      out <- list()
+      for (proc in list.dirs(dir, full.names = FALSE, recursive = FALSE)) {
+        files <- list.files(file.path(dir, proc), pattern = "\\.txt$", full.names = TRUE)
+        if (length(files) == 0L) next
+        out[[proc]] <- utils::read.delim(files[1], check.names = FALSE, stringsAsFactors = FALSE)
+      }
+      if (length(out) == 0L) nb_abort("SX-SAVED-01", "The project has no report files.")
+      structure(out, class = c("nb_saved_reports", "list"))
+    },
+    log_dir = file.path(root, "logs"),
+    code = "SX-SAVED-02",
+    message = "The saved reports could not be read."
+  )
+}
+
+#' @export
+print.nb_saved_reports <- function(x, ...) {
+  cat("<nb_saved_reports> names and row counts only\n")
+  for (nm in names(x)) cat(sprintf("  %s: %d rows\n", nm, nrow(x[[nm]])))
+  invisible(x)
+}
+
 #' Compare our estimates with another set
 #'
 #' Compares a Section 9 table (from [run_estimate()]) with a table of reference
@@ -313,7 +359,8 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
 #' within `tolerance`, and the ratio of the CVs where both exist. What is
 #' released is the person's decision (D-03 applies to anything released).
 #'
-#' @param x Our estimates (a Section 9 table).
+#' @param x Our estimates (a Section 9 table), or a table from [official_reports_to_table()]
+#'   (then `species` is needed), for example the saved reports of the original project.
 #' @param reference A table from [official_reports_to_table()].
 #' @param reference_value `baseline` or `mean` (the bootstrap mean): which
 #'   reference value to compare our `value` with.
@@ -322,6 +369,8 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
 #'   (compared with `reference_value = "mean"`). When given, the table gets `z`, the
 #'   difference in units of its expected Monte Carlo standard error; |z| below about 2
 #'   is what two independent sets of random draws would give by chance.
+#' @param species Species codes, used to pick the species out of StoX category names when `x`
+#'   is an official table.
 #' @return An `nb_comparison` tibble with `quantity`, `stratum`, `species_code`,
 #'   `ratio`, `rel_diff`, `within`, `cv_ratio` and, with `replicates`, `z`.
 #' @export
@@ -332,9 +381,19 @@ official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundan
 #'   Stratum = "A", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 2e6)))
 #' compare_estimates(ours, reference)
 compare_estimates <- function(x, reference, reference_value = c("baseline", "mean"), tolerance = 0.01,
-                              replicates = NULL) {
+                              replicates = NULL, species = NULL) {
   reference_value <- match.arg(reference_value)
   kind <- if (reference_value == "mean") "bootstrap" else "baseline"
+  # A table from official_reports_to_table() as `x` (for example saved reports of the original
+  # project against a rerun): turned into the layout of our estimates.
+  if (all(c("kind", "species_category") %in% names(x))) {
+    if (is.null(species)) nb_abort("SX-CMP-04", "`species` (the species codes) is needed when `x` is an official table.")
+    if (!reference_value %in% names(x)) nb_abort("SX-CMP-01", "`x` has no values of the requested kind.")
+    x <- x[x$kind == kind & !is.na(x[[reference_value]]), , drop = FALSE]
+    x <- data.frame(species_code = species_from_category(x$species_category, species),
+                    stratum = x$stratum, quantity = x$quantity, value = x[[reference_value]],
+                    cv = if ("cv" %in% names(x)) x$cv else NA_real_, stringsAsFactors = FALSE)
+  }
   if (!reference_value %in% names(reference)) {
     nb_abort("SX-CMP-01", "The reference has no values of the requested kind.")
   }

@@ -819,6 +819,25 @@ test_that("compare_estimates() gives z in units of the Monte Carlo standard erro
   expect_error(compare_estimates(ours, reference, "mean", replicates = 1), "SX-CMP-03")
 })
 
+test_that("saved report files are read, and an official table can stand in for x", {
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "p", "output", "report", "R1"), recursive = TRUE)
+  utils::write.table(
+    data.frame(Stratum = c("A", "B"), SpeciesCategory = "x/SP1/NA/s", Abundance_sum = c(2e6, 3e6)),
+    file.path(root, "p", "output", "report", "R1", "ReportData.txt"),
+    sep = "\t", row.names = FALSE, quote = FALSE)
+  saved <- stox_saved_reports("p", root = root)
+  expect_s3_class(saved, "nb_saved_reports")
+  expect_output(print(saved), "R1: 2 rows")
+  expect_error(stox_saved_reports("nope", root = root), "SX-SAVED-0|IO-PATH-03")
+  a <- official_reports_to_table(saved)
+  b <- official_reports_to_table(list(R1 = data.frame(
+    Stratum = c("A", "B"), SpeciesCategory = "x/SP1/NA/s", Abundance_sum = c(2e6, 3.3e6))))
+  expect_error(compare_estimates(a, b), "SX-CMP-04")
+  cmp <- compare_estimates(a, b, "baseline", species = "SP1")
+  expect_equal(cmp$ratio, c(1, 3 / 3.3), tolerance = 1e-9)
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))
