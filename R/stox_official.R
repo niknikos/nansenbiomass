@@ -365,8 +365,8 @@ print.nb_saved_reports <- function(x, ...) {
 #' @param reference_value `baseline` or `mean` (the bootstrap mean): which
 #'   reference value to compare our `value` with.
 #' @param tolerance Relative tolerance for the flag `within`.
-#' @param replicates Number of bootstrap replicates behind each of two bootstrap means
-#'   (compared with `reference_value = "mean"`). When given, the table gets `z`, the
+#' @param replicates Number of bootstrap replicates behind the two bootstrap means (compared
+#'   with `reference_value = "mean"`): one number if both have the same, else `c(x, reference)`. When given, the table gets `z`, the
 #'   difference in units of its expected Monte Carlo standard error; |z| below about 2
 #'   is what two independent sets of random draws would give by chance.
 #' @param species Species codes, used to pick the species out of StoX category names when `x`
@@ -403,8 +403,8 @@ compare_estimates <- function(x, reference, reference_value = c("baseline", "mea
     species_from_category(y$species_category, unique(x$species_code))
   y$reference <- y[[reference_value]]
   y$reference_cv <- if ("cv" %in% names(y)) y$cv else NA_real_
-  if (!is.null(replicates) && (!is.numeric(replicates) || length(replicates) != 1L || replicates < 2)) {
-    nb_abort("SX-CMP-03", "`replicates` must be one number of bootstrap replicates, at least 2.")
+  if (!is.null(replicates) && (!is.numeric(replicates) || !length(replicates) %in% 1:2 || any(replicates < 2))) {
+    nb_abort("SX-CMP-03", "`replicates` must be one or two numbers of bootstrap replicates, at least 2.")
   }
   by <- c("quantity", "stratum", if (!all(is.na(y$species_code))) "species_code")
   m <- merge(as.data.frame(x)[c("species_code", "stratum", "quantity", "value", "cv")],
@@ -418,7 +418,8 @@ compare_estimates <- function(x, reference, reference_value = c("baseline", "mea
   # difference in units of its expected standard error, from the two bootstrap SDs
   # (SD = CV x mean) and the number of replicates. |z| below about 2 is consistent with noise.
   if (!is.null(replicates)) {
-    se <- sqrt((m$cv * m$value)^2 + (m$reference_cv * m$reference)^2) / sqrt(replicates)
+    n <- rep_len(replicates, 2L)
+    se <- sqrt((m$cv * m$value)^2 / n[[1]] + (m$reference_cv * m$reference)^2 / n[[2]])
     out$z <- ifelse(is.finite(se) & se > 0, (m$value - m$reference) / se, NA_real_)
   }
   structure(out, tolerance = tolerance, class = c("nb_comparison", "tbl_df", "tbl", "data.frame"))

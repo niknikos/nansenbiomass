@@ -815,6 +815,8 @@ test_that("compare_estimates() gives z in units of the Monte Carlo standard erro
   cmp <- compare_estimates(ours, reference, "mean", replicates = 100)
   se <- sqrt(55^2 + 50^2) / 10
   expect_equal(cmp$z, 10 / se, tolerance = 1e-9)
+  unequal <- compare_estimates(ours, reference, "mean", replicates = c(100, 1000))
+  expect_equal(unequal$z, 10 / sqrt(55^2 / 100 + 50^2 / 1000), tolerance = 1e-9)
   expect_false("z" %in% names(compare_estimates(ours, reference, "mean")))
   expect_error(compare_estimates(ours, reference, "mean", replicates = 1), "SX-CMP-03")
 })

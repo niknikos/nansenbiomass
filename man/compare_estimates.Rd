@@ -24,8 +24,8 @@ reference value to compare our \code{value} with.}
 
 \item{tolerance}{Relative tolerance for the flag \code{within}.}
 
-\item{replicates}{Number of bootstrap replicates behind each of two bootstrap means
-(compared with \code{reference_value = "mean"}). When given, the table gets \code{z}, the
+\item{replicates}{Number of bootstrap replicates behind the two bootstrap means (compared
+with \code{reference_value = "mean"}): one number if both have the same, else \code{c(x, reference)}. When given, the table gets \code{z}, the
 difference in units of its expected Monte Carlo standard error; |z| below about 2
 is what two independent sets of random draws would give by chance.}
 
