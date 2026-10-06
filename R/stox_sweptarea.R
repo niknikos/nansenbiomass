@@ -38,7 +38,7 @@ filter_code_fields <- c(
 )
 filter_numeric_fields <- c(
   "distance", "towdistance", "effectivetowdistance", "bottomdepthstart", "bottomdepthstop",
-  "bottomdepth", "minhauldepth", "maxhauldepth"
+  "bottomdepth", "minhauldepth", "maxhauldepth", "soaktime"
 )
 filter_max_values <- 5L
 filter_max_clauses <- 12L
