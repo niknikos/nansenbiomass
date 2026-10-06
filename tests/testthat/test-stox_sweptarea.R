@@ -873,6 +873,29 @@ test_that("stox_fit_check() accepts a project made by the template and flags wha
   expect_match(f$detail[f$feature == "Filters"], "cruise")
   d3 <- d; d3$process_tables$n_entries[d3$process_tables$table == "Stratum_PSU"] <- 20L
   expect_equal(status(stox_fit_rows(d3), "Sampling units (PSUs)"), "not supported")
+  # a StoX 3.x style project: no PSU, layer or survey processes, the settings are parameters of
+  # MeanLengthDistribution, and AddToStoxBiotic copies variables into the StoX data
+  as3 <- function(p, psu = "StationToPSU") {
+    p <- p[!grepl("DefineBioticPSU|DefineBioticLayer|DefineSurvey", p$`function`), ]
+    set <- c(LayerDefinition = "FunctionParameter", LayerDefinitionMethod = "WaterColumn",
+             SurveyDefinition = "FunctionParameter", SurveyDefinitionMethod = "AllStrata",
+             PSUDefinition = "FunctionParameter", PSUDefinitionMethod = psu)
+    for (nm in names(set)) p$value[grepl("MeanLengthDistribution", p$`function`) & p$parameter == nm] <- set[[nm]]
+    add_rows <- tibble::tibble(model = "baseline", step = 2L, process = "AddToStoxBiotic",
+                               `function` = "RstoxData::AddToStoxBiotic",
+                               parameter = c("VariableNames[1]", "VariableNames[2]"),
+                               value = c("gearcondition", "area"), status = "shown", fields = NA_character_)
+    dplyr::bind_rows(p, add_rows)
+  }
+  d4 <- d; d4$processes <- as3(d$processes); d4$process_tables <- d$process_tables[0, ]
+  r4 <- stox_fit_rows(d4)
+  expect_equal(status(r4, "Sampling units (PSUs)"), "supported")
+  expect_equal(status(r4, "Depth layers"), "supported")
+  expect_equal(status(r4, "Survey definition (what counts towards the total)"), "supported")
+  expect_match(r4$detail[r4$feature == "Variables added to StoxBiotic"], "gearcondition, area")
+  expect_false("Other processes" %in% r4$feature)
+  d5 <- d; d5$processes <- as3(d$processes, psu = "PreDefined")
+  expect_equal(status(stox_fit_rows(d5), "Sampling units (PSUs)"), "check")
   o <- alter(function(p) { p$`function`[p$process == "StratumArea"] <- "RstoxBase::SomethingNew"; p })
   expect_match(o$detail[o$feature == "Other processes"], "SomethingNew")
 })

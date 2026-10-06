@@ -1028,7 +1028,7 @@ stox_known_functions <- c(
   "LengthDistribution", "RegroupLengthDistribution", "SumLengthDistribution",
   "MeanLengthDistribution", "SweptAreaDensity", "MeanDensity", "Quantity", "StratumArea",
   "Individuals", "SuperIndividuals", "ImputeSuperIndividuals", "SpeciesCategoryCatch",
-  "MeanSpeciesCategoryCatch"
+  "MeanSpeciesCategoryCatch", "AddToStoxBiotic"
 )
 
 # Fields that the inclusion rules of the template can reproduce
@@ -1097,31 +1097,48 @@ stox_fit_rows <- function(d) {
                "; read by stox_strata() from the file or the project's own data"))
   } else add("Strata", "check", "no DefineStratumPolygon process")
 
-  # Survey definition
-  sm <- vals("DefineSurvey", "^DefinitionMethod$")
-  add("Survey definition (what counts towards the total)", if (!length(sm) || all(sm %in% c("AllStrata", "Table"))) "supported" else "check",
-      if (length(sm)) paste0("method ", one(sm)) else "no DefineSurvey process")
+  # Survey definition, sampling units and layers. A 4.x project has processes for them; a 3.x
+  # project states them as parameters of MeanLengthDistribution.
+  fp <- function(par) vals("MeanLengthDistribution", par)
+  sm <- if (has("DefineSurvey")) vals("DefineSurvey", "^DefinitionMethod$") else fp("^SurveyDefinitionMethod$")
+  add("Survey definition (what counts towards the total)",
+      if (length(sm) && all(sm %in% c("AllStrata", "Table"))) "supported" else "check",
+      if (length(sm)) paste0("method ", one(sm)) else "not found")
 
-  # PSUs
-  pm <- vals("DefineBioticPSU", "^DefinitionMethod$")
   pt <- d$process_tables
   n_st <- if (!is.null(pt)) sum(pt$n_entries[grepl("Station_PSU", pt$table)]) else NA
   n_psu <- if (!is.null(pt)) sum(pt$n_entries[grepl("Stratum_PSU", pt$table)]) else NA
-  if (!has("DefineBioticPSU")) {
-    add("Sampling units (PSUs)", "check", "no DefineBioticPSU process")
-  } else if (is.na(n_st) || n_st == 0L) {
-    add("Sampling units (PSUs)", "check", "the PSU tables could not be counted; the template makes one PSU per station")
-  } else if (n_st == n_psu) {
-    add("Sampling units (PSUs)", "supported", paste0("one PSU per station (", n_st, " stations, ", n_psu, " PSUs)"))
+  if (has("DefineBioticPSU")) {
+    if (is.na(n_st) || n_st == 0L) {
+      add("Sampling units (PSUs)", "check", "the PSU tables could not be counted; the template makes one PSU per station")
+    } else if (n_st == n_psu) {
+      add("Sampling units (PSUs)", "supported", paste0("one PSU per station (", n_st, " stations, ", n_psu, " PSUs)"))
+    } else {
+      add("Sampling units (PSUs)", "not supported",
+          paste0(n_st, " stations are grouped into ", n_psu, " PSUs; the template makes one PSU per station"))
+    }
   } else {
-    add("Sampling units (PSUs)", "not supported",
-        paste0(n_st, " stations are grouped into ", n_psu, " PSUs; the template makes one PSU per station"))
+    pdm <- fp("^PSUDefinitionMethod$"); pdf <- fp("^PSUDefinition$")
+    ok <- length(pdm) && all(pdm == "StationToPSU") && (!length(pdf) || all(pdf == "FunctionParameter"))
+    add("Sampling units (PSUs)", if (ok) "supported" else "check",
+        if (length(pdm)) paste0("definition ", one(pdf), ", method ", one(pdm),
+                                if (ok) " (one PSU per station, defined by the function itself)" else
+                                  "; the template makes one PSU per station") else
+          "no PSU definition found; the template makes one PSU per station")
   }
 
-  # Layers
-  lm <- vals("DefineBioticLayer", "^DefinitionMethod$")
-  add("Depth layers", if (!length(lm) || all(lm == "WaterColumn")) "supported" else "not supported",
-      if (length(lm)) paste0("method ", one(lm), if (all(lm == "WaterColumn")) " (one layer for the water column)" else "; the template uses the whole water column") else "no layer definition")
+  lm <- if (has("DefineBioticLayer")) vals("DefineBioticLayer", "^DefinitionMethod$") else fp("^LayerDefinitionMethod$")
+  add("Depth layers", if (length(lm) && all(lm == "WaterColumn")) "supported" else if (length(lm)) "not supported" else "check",
+      if (length(lm)) paste0("method ", one(lm), if (all(lm == "WaterColumn")) " (one layer for the water column)" else
+        "; the template uses the whole water column") else "no layer definition found")
+
+  # Variables added to StoxBiotic
+  ad <- vals("AddToStoxBiotic", "^VariableNames")
+  if (has("AddToStoxBiotic")) {
+    add("Variables added to StoxBiotic", "supported",
+        paste0("adds ", if (length(ad)) paste(ad, collapse = ", ") else "variables not read",
+               "; the template reads these from the biotic file, and the ones a filter uses are checked under Filters"))
+  }
 
   # Length distribution
   ld <- vals("LengthDistribution", "^LengthDistributionType$")
