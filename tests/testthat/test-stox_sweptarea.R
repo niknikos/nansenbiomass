@@ -894,6 +894,13 @@ test_that("stox_fit_check() accepts a project made by the template and flags wha
   expect_equal(status(r4, "Survey definition (what counts towards the total)"), "supported")
   expect_match(r4$detail[r4$feature == "Variables added to StoxBiotic"], "gearcondition, area")
   expect_false("Other processes" %in% r4$feature)
+  # the catch-weight route: weight density from total catch, and the settings on MeanSpeciesCategoryCatch
+  d6 <- d4; d6$processes$`function`[grepl("MeanLengthDistribution", d6$processes$`function`)] <- "RstoxBase::MeanSpeciesCategoryCatch"
+  d6$processes$value[d6$processes$parameter == "SweptAreaDensityMethod"] <- "TotalCatch"
+  d6$processes$value[d6$processes$parameter == "DensityType"] <- "AreaWeightDensity"
+  r6 <- stox_fit_rows(d6)
+  expect_equal(status(r6, "Density"), "supported")
+  expect_equal(status(r6, "Sampling units (PSUs)"), "supported")
   d5 <- d; d5$processes <- as3(d$processes, psu = "PreDefined")
   expect_equal(status(stox_fit_rows(d5), "Sampling units (PSUs)"), "check")
   o <- alter(function(p) { p$`function`[p$process == "StratumArea"] <- "RstoxBase::SomethingNew"; p })

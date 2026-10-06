@@ -1099,7 +1099,7 @@ stox_fit_rows <- function(d) {
 
   # Survey definition, sampling units and layers. A 4.x project has processes for them; a 3.x
   # project states them as parameters of MeanLengthDistribution.
-  fp <- function(par) vals("MeanLengthDistribution", par)
+  fp <- function(par) c(vals("MeanLengthDistribution", par), vals("MeanSpeciesCategoryCatch", par))
   sm <- if (has("DefineSurvey")) vals("DefineSurvey", "^DefinitionMethod$") else fp("^SurveyDefinitionMethod$")
   add("Survey definition (what counts towards the total)",
       if (length(sm) && all(sm %in% c("AllStrata", "Table"))) "supported" else "check",
@@ -1158,9 +1158,10 @@ stox_fit_rows <- function(d) {
              if (length(sw) && any(sw != "Constant")) "; the template takes a constant width only" else ""))
   sd_m <- vals("SweptAreaDensity", "^SweptAreaDensityMethod$")
   dt <- vals("SweptAreaDensity", "^DensityType$")
-  add("Density", if ((!length(sd_m) || all(sd_m == "LengthDistributed")) && (!length(dt) || all(dt == "AreaNumberDensity"))) "supported" else "check",
+  ok_d <- all(sd_m %in% c("LengthDistributed", "TotalCatch")) && all(dt %in% c("AreaNumberDensity", "AreaWeightDensity"))
+  add("Density", if (length(sd_m) && ok_d) "supported" else "check",
       paste0("method ", if (length(sd_m)) one(sd_m) else "not found", ", type ", if (length(dt)) one(dt) else "not found",
-             "; the template uses length-distributed number density"))
+             "; the template uses length-distributed number density and total-catch weight density"))
 
   # Biomass route
   si <- has("Individuals") && has("SuperIndividuals") && has("ImputeSuperIndividuals")
