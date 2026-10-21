@@ -498,7 +498,9 @@ sections and silently dropped `species_groups`, so the first run of survey B wen
 lookup; the family names then matched only catches recorded at family level, and the comparison showed it
 (ratios near 0 for 15 of 16 families). The test had set the groups after reading the configuration, so it
 missed the path a person uses. Fixed: every known section is kept, an unknown section is refused
-(`CF-VAL-03`), and the test reads its configuration from a file. That run's estimates are void.
+(`CF-VAL-03`), and the test reads its configuration from a file. That run's estimates are void. The official lookup also lists 56 catch categories under more than one family;
+StoX's translation uses the first row for such a code (verified on StoX 4.2.1 with synthetic data), so the
+package now does the same, in the order of the project's table, and says how many codes were affected.
 
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit

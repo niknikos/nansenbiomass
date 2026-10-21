@@ -722,9 +722,13 @@ read_species_groups <- function(cfg, root) {
   out <- data.frame(value = trimws(tab[[sg$value_column]]), group = trimws(tab[[sg$group_column]]),
                     stringsAsFactors = FALSE)
   out <- unique(out[!is.na(out$value) & nzchar(out$value) & !is.na(out$group) & nzchar(out$group), ])
+  # A code listed under more than one group: StoX's translation uses the first row of the table and
+  # ignores the later ones (verified on StoX 4.2.1), so the first is kept here too, in file order.
   dup <- unique(out$value[duplicated(out$value)])
   if (length(dup)) {
-    nb_abort("SX-GRP-02", paste0(length(dup), " catch categories are assigned to more than one group in the species-group file."))
+    message(sprintf(paste("%d catch categories are listed under more than one group in the species-group file;",
+                          "the first group listed is used, as StoX does."), length(dup)))
+    out <- out[!duplicated(out$value), , drop = FALSE]
   }
   if (any(grepl("['\"\\\\]", out$group))) {
     nb_abort("SX-GRP-03", "A group name contains a quote or backslash that a StoX filter cannot take.")

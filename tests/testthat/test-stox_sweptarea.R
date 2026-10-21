@@ -1413,11 +1413,18 @@ test_that("species groups (for example families) are estimated as the sum of the
   expect_true(all(sup$n_positive <= sup$n_stations))
   expect_gt(sum(sup$n_positive), 0L)
   expect_true(file.exists(file.path(res$project_path, "species-groups.csv")))
-  # a lookup that assigns one code to two groups is refused
-  utils::write.csv(data.frame(Value = c("SYN001", "SYN001"), Family = c("FamA", "FamB")),
-                   file.path(s$root, "lookups", "bad.csv"), row.names = FALSE)
-  cfg$species_groups$file <- "lookups/bad.csv"
-  expect_error(run_estimate(cfg, root = s$root), "SX-GRP-02|SX-RUN-01")
+  # a code listed under two groups goes to the first one listed, as in StoX
+  utils::write.csv(data.frame(Value = c("SYN001", "SYN001", "SYN002", "SYN003"),
+                              Family = c("FamB", "FamA", "FamA", "FamB")),
+                   file.path(s$root, "lookups", "twice.csv"), row.names = FALSE)
+  cfg$species_groups$file <- "lookups/twice.csv"
+  expect_message(g <- read_species_groups(cfg, s$root), "1 catch categories are listed under more than one group")
+  expect_equal(g$group[g$value == "SYN001"], "FamB")
+  res2 <- suppressMessages(suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st2"))))
+  b2 <- res2$estimates[res2$estimates$quantity == "biomass" & res2$estimates$stratum != "total", ]
+  fam_b <- direct_biomass(s$sv, "SYN001") + direct_biomass(s$sv, "SYN003")[names(direct_biomass(s$sv, "SYN001"))]
+  got2 <- b2[b2$species_code == "FamB", ]
+  expect_equal(got2$value, as.numeric(fam_b[got2$stratum]), tolerance = 1e-6)
   raw <- yaml::read_yaml(example_config()); raw$species_groups <- list(value_column = "Value")
   expect_error(validate_config(raw), "CF-REQ-01")
 })
