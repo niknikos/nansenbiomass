@@ -1,0 +1,49 @@
+# Reproduction of the second official project ("real survey B", demersal fish, estimates by family).
+# Written from the project's settings (StoX 4.2.0) by Claude on 21 October 2026; every value below
+# is the project's own unless marked "to confirm". Paths are relative to NANSEN_DATA_ROOT; the
+# files named here are in the data zone, not in the repository.
+survey:
+  label: auto                # the survey number (cruise) of the biotic file
+  year: auto                 # the start year of the stations in the biotic file
+data:
+  biotic:
+    - surveys/survey-B-project-copy.xml   # to confirm: the project's own copy of the biotic file
+  strata: strata/survey-B.geojson         # written by stox_strata() from the project
+  stratum_label: stratum                  # the label stox_strata() writes
+inclusion:
+  # Haul filter of the project:
+  # gear %in% c("3032", "3033", "3034") & gearcondition %in% "1" & samplequality %in% "12" & soaktime >= 0.25
+  gear: ["3032", "3033", "3034"]
+  gearcondition: ["1"]
+  samplequality: ["12"]
+  soaktime_min: 0.25         # hours (15 minutes)
+  positive_distance: true
+  distance_recovery: none
+  # No station exclusion list in the project.
+swept_width:
+  method: fixed
+  fixed_m: 18.5
+# Estimates by family, as the project: RedefineStoxBiotic puts the catch-category code in
+# SpeciesCategory, and the project's translation (exported with stox_translation_table(), 8140 rows)
+# maps codes to families. The species filter of the project keeps these 18 families.
+species_groups:
+  file: lookups/survey-B-families.csv
+  value_column: SpeciesCategory
+  group_column: NewValue
+species: [Apogonidae, Ariommatidae, Bothidae, Cynoglossidae, Fistulariidae, Haemulidae, Lethrinidae,
+          Lutjanidae, Merlucciidae, Mullidae, Nemipteridae, Polynemidae, Priacanthidae, Sciaenidae,
+          Serranidae, Soleidae, Sparidae, Synodontidae]
+quantities: [biomass]        # the project estimates biomass from catch weights only
+biomass:
+  method: total_catch        # SpeciesCategoryCatch, SweptAreaDensity TotalCatch / AreaWeightDensity
+bootstrap:
+  replicates: 500            # as the project
+  seed: 1                    # to confirm: the seed of the project's bootstrap
+  interval: 90               # the project reports the 5% and 95% percentiles
+estimate:
+  point: bootstrap_mean
+stox:
+  version: 4.2.1
+disclosure:
+  min_stations: 5
+  min_positive: 3
