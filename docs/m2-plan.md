@@ -506,7 +506,12 @@ package now does the same, in the order of the project's table, and says how man
 baseline biomass against the 4.2.1 rerun of the official project: ratio 1.000 for every compared cell, by
 stratum and for the total of each of the 16 families present in both tables. The tow-time rule, the family
 grouping (first group for a code listed twice), the catch-weight route and the stated units (tonnes) are
-therefore those of the official project. The bootstrap comparison (500 replicates) follows.
+therefore those of the official project. Ariommatidae and Soleidae were not caught at the stations used:
+zero in our table, no row in the official one. Bootstrap means, 500 replicates on both sides: 99% of cells
+have |z| < 2 (one cell at -2.6), mean z 0.09; the family totals have ratios 0.957 to 1.06 and |z| at most 1.4.
+Many cells agree almost exactly (quartiles of z within about +-0.3), so here the two runs largely drew the
+same resamples, unlike survey A (made with StoX 3.4); that the version or the project structure decides
+whether the draws coincide is an interpretation, not established. Survey B is reproduced under D-11.
 
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit
