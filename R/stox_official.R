@@ -637,7 +637,7 @@ print.nb_strata <- function(x, ...) {
 #'   project that holds a translation table.
 #' @param overwrite Replace an existing output file.
 #' @inheritParams read_survey
-#' @return An `nb_translation` (invisibly when written): the process, the number of rows,
+#' @return An `nb_translation`: the process, the number of rows,
 #'   the column names and the output path relative to `root`.
 #' @export
 #' @examples
@@ -648,7 +648,7 @@ print.nb_strata <- function(x, ...) {
 #'   functionName = "RstoxData::DefineTranslation",
 #'   processData = list(Translation = list(
 #'     list(SpeciesCategory = "SP1", NewValue = "FamA"),
-#'     list(SpeciesCategory = "SP2", NewValue = "FamA"))))))),
+#'     list(SpeciesCategory = "SP2", NewValue = "FamA")))))))),
 #'   file.path(root, "p", "process", "project.json"), auto_unbox = TRUE)
 #' stox_translation_table("p", "lookups/families.csv", root = root)
 stox_translation_table <- function(project, out, process = NULL, root = data_root(), overwrite = FALSE) {
@@ -674,10 +674,8 @@ stox_translation_table <- function(project, out, process = NULL, root = data_roo
       tab <- data.table::rbindlist(rows, fill = TRUE)
       dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
       data.table::fwrite(tab, out_file, quote = TRUE)
-      res <- structure(list(process = safe_field_names(p$processName), n_rows = nrow(tab),
-                            columns = safe_field_names(names(tab)), out = out), class = "nb_translation")
-      print(res)
-      invisible(res)
+      structure(list(process = safe_field_names(p$processName), n_rows = nrow(tab),
+                     columns = safe_field_names(names(tab)), out = out), class = "nb_translation")
     },
     log_dir = file.path(root, "logs"),
     code = "SX-TRN-05",

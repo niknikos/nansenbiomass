@@ -25,7 +25,7 @@ project that holds a translation table.}
 \item{overwrite}{Replace an existing output file.}
 }
 \value{
-An \code{nb_translation} (invisibly when written): the process, the number of rows,
+An \code{nb_translation}: the process, the number of rows,
 the column names and the output path relative to \code{root}.
 }
 \description{
@@ -44,7 +44,7 @@ jsonlite::write_json(list(project = list(models = list(baseline = list(list(
   functionName = "RstoxData::DefineTranslation",
   processData = list(Translation = list(
     list(SpeciesCategory = "SP1", NewValue = "FamA"),
-    list(SpeciesCategory = "SP2", NewValue = "FamA"))))))),
+    list(SpeciesCategory = "SP2", NewValue = "FamA")))))))),
   file.path(root, "p", "process", "project.json"), auto_unbox = TRUE)
 stox_translation_table("p", "lookups/families.csv", root = root)
 }

@@ -920,7 +920,8 @@ test_that("the translation table of an official project is exported to the data 
                                                list(SpeciesCategory = "164713", NewValue = "Sparidae"),
                                                list(SpeciesCategory = "200000", NewValue = "Bothidae"))))
   )))), file.path(root, "p", "process", "project.json"), auto_unbox = TRUE)
-  shown <- utils::capture.output(tr <- stox_translation_table("p", "lookups/f.csv", root = root))
+  tr <- stox_translation_table("p", "lookups/f.csv", root = root)
+  shown <- utils::capture.output(print(tr))
   expect_s3_class(tr, "nb_translation")
   expect_equal(tr$n_rows, 3L)
   expect_equal(tr$columns, c("SpeciesCategory", "NewValue"))
