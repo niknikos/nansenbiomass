@@ -36,6 +36,11 @@ as_codes <- function(x, field) {
 
 whole_number <- function(x) is.numeric(x) && length(x) == 1L && !is.na(x) && x == round(x)
 
+# The sections of a configuration, in the order they are kept
+config_sections <- c("survey", "data", "inclusion", "swept_width", "species", "species_groups",
+                     "quantities", "catch", "lengths", "biomass", "bootstrap", "estimate", "stox",
+                     "disclosure")
+
 #' Validate a survey configuration
 #'
 #' Checks a configuration list (as returned by [read_config()]) against the
@@ -55,6 +60,12 @@ validate_config <- function(cfg) {
   if (!is.list(cfg)) nb_abort("CF-TYPE-01", "The configuration must be a list of fields.")
   required <- c("survey", "data", "inclusion", "swept_width", "species", "bootstrap")
   for (f in required) if (is.null(cfg[[f]])) cf_abort("CF-REQ-01", f, "is required")
+  # a section the package does not know is refused, never silently dropped
+  unknown <- setdiff(names(cfg), config_sections)
+  if (length(unknown)) {
+    cf_abort("CF-VAL-03", paste(unknown, collapse = ", "),
+             paste0("is not a configuration section (known: ", paste(config_sections, collapse = ", "), ")"))
+  }
 
   # survey
   if (!is_string(cfg$survey$label)) cf_abort("CF-REQ-01", "survey.label", "is required")
@@ -282,7 +293,7 @@ validate_config <- function(cfg) {
   cfg$disclosure <- list(min_stations = as.integer(dis$min_stations),
                          min_positive = as.integer(dis$min_positive))
 
-  structure(cfg[c(required, "quantities", "catch", "lengths", "biomass", "estimate", "stox", "disclosure")], class = "nb_config")
+  structure(cfg[intersect(config_sections, names(cfg))], class = "nb_config")
 }
 
 #' Read a survey configuration

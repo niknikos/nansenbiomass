@@ -1388,10 +1388,17 @@ test_that("species groups (for example families) are estimated as the sum of the
   utils::write.csv(data.frame(Value = c("SYN001", "SYN002", "SYN003", "SYN999"),
                               Family = c("FamA", "FamA", "FamB", "FamZ"), Other = "x"),
                    file.path(s$root, "lookups", "families.csv"), row.names = FALSE)
-  cfg <- quick_config(2L)
-  cfg$species <- c("FamA", "FamB")
-  cfg$species_groups <- list(file = "lookups/families.csv", value_column = "Value", group_column = "Family")
-  cfg$quantities <- "biomass"
+  # through a configuration file and read_config(), as a person runs it
+  raw <- yaml::read_yaml(example_config())
+  raw$species <- c("FamA", "FamB")
+  raw$species_groups <- list(file = "lookups/families.csv", value_column = "Value", group_column = "Family")
+  raw$quantities <- "biomass"
+  raw$bootstrap$replicates <- 2L
+  raw$estimate <- list(point = "baseline")
+  yml <- file.path(s$root, "groups.yml")
+  yaml::write_yaml(raw, yml)
+  cfg <- read_config(yml)
+  expect_equal(cfg$species_groups$file, "lookups/families.csv")
   res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
   b <- res$estimates[res$estimates$quantity == "biomass" & res$estimates$stratum != "total", ]
   expect_setequal(unique(b$species_code), c("FamA", "FamB"))

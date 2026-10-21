@@ -130,3 +130,14 @@ test_that("validating a validated configuration changes nothing", {
   once <- validate_config(raw)
   expect_equal(validate_config(once), once)
 })
+
+test_that("every configuration section is kept, and an unknown one is refused", {
+  raw <- yaml::read_yaml(system.file("configs", "synthetic-example.yml", package = "nansenbiomass"))
+  raw$species_groups <- list(file = "lookups/families.csv", value_column = "SpeciesCategory",
+                             group_column = "NewValue")
+  cfg <- validate_config(raw)
+  expect_equal(cfg$species_groups$group_column, "NewValue")
+  expect_equal(validate_config(cfg)$species_groups$value_column, "SpeciesCategory")   # idempotent
+  raw$species_group <- list(file = "x.csv")                                           # a typo
+  expect_error(validate_config(raw), "CF-VAL-03")
+})

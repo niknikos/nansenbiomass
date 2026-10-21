@@ -493,6 +493,13 @@ catch-weight estimate. Added for it: `inclusion.soaktime_min` (with `soaktime` i
 the support table counts a catch of any species of a group), `stox_translation_table()` (exports the stored
 lookup to the data zone, counts and column names only), and `bootstrap.interval` (95 or 90).
 
+**A defect found on the first run of survey B (21 October 2026).** `validate_config()` kept a fixed list of
+sections and silently dropped `species_groups`, so the first run of survey B went ahead without the family
+lookup; the family names then matched only catches recorded at family level, and the comparison showed it
+(ratios near 0 for 15 of 16 families). The test had set the groups after reading the configuration, so it
+missed the path a person uses. Fixed: every known section is kept, an unknown section is refused
+(`CF-VAL-03`), and the test reads its configuration from a file. That run's estimates are void.
+
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit
 (`ton`, `10^6 individuals`), and our reports and official ones are converted by the unit they state, from
