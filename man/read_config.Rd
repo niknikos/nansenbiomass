@@ -52,7 +52,9 @@ the data zone (relative to the data root; comma, semicolon or tab separated) wit
 of catch-category codes (\code{value_column}, default \code{Value}) and a column of group names
 (\code{group_column}, default \code{Family}); \code{species} then lists group names. See
 \code{\link[=stox_translation_table]{stox_translation_table()}} to export the lookup stored in an official project.
-\item \code{bootstrap}: \code{replicates} and \code{seed} (D-10), \code{impute_seed} (the seed of the imputation
+\item \code{bootstrap}: \code{replicates} and \code{seed} (D-10), \code{interval} (the percentile interval, 95 for
+2.5\% to 97.5\%, the default, or 90 for 5\% to 95\%, to match the project), \code{impute_seed}
+(the seed of the imputation
 of super-individuals in the bootstrap; default: \code{seed}), and optionally \code{cores} (default:
 the machine's cores minus 2, at least 1, and not more than the replicates).
 \item \code{catch}: \code{raising_factor_priority}, \code{Weight} (default) or \code{Number}, StoX's choice

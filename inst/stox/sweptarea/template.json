@@ -434,10 +434,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "TargetVariableUnit": "ton"
    },
    "when": "catch_biomass"
@@ -476,10 +473,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "TargetVariableUnit": "ton"
    },
    "when": "catch_biomass"
@@ -519,10 +513,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "RemoveMissingValues": true,
     "TargetVariableUnit": "ton"
    },
@@ -563,10 +554,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "RemoveMissingValues": true,
     "TargetVariableUnit": "ton"
    },
@@ -606,10 +594,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "TargetVariableUnit": "10^6 individuals"
    },
    "when": "catch_abundance"
@@ -648,10 +633,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "TargetVariableUnit": "10^6 individuals"
    },
    "when": "catch_abundance"
@@ -691,10 +673,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "RemoveMissingValues": true,
     "TargetVariableUnit": "10^6 individuals"
    },
@@ -735,10 +714,7 @@
      "SpeciesCategory"
     ],
     "BootstrapReportFunction": "summaryStox",
-    "Percentages": [
-     2.5,
-     97.5
-    ],
+    "Percentages": "{{percentages}}",
     "RemoveMissingValues": true,
     "TargetVariableUnit": "10^6 individuals"
    },

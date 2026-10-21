@@ -189,6 +189,12 @@ validate_config <- function(cfg) {
   cfg$bootstrap <- list(replicates = as.integer(bs$replicates), seed = as.integer(bs$seed),
                         impute_seed = as.integer(impute_seed))
   if (!is.null(cores)) cfg$bootstrap$cores <- as.integer(cores)
+  # the percentile interval reported with each estimate, in per cent (95: 2.5% to 97.5%)
+  interval <- if (is.null(bs$interval)) 95 else bs$interval
+  if (!is.numeric(interval) || length(interval) != 1L || !interval %in% c(90, 95)) {
+    cf_abort("CF-VAL-01", "bootstrap.interval", "must be 90 or 95")
+  }
+  cfg$bootstrap$interval <- as.integer(interval)
 
   # catch handling (to be set from the official projects, D-09)
   catch <- cfg$catch
@@ -317,7 +323,9 @@ validate_config <- function(cfg) {
 #'   of catch-category codes (`value_column`, default `Value`) and a column of group names
 #'   (`group_column`, default `Family`); `species` then lists group names. See
 #'   [stox_translation_table()] to export the lookup stored in an official project.
-#' * `bootstrap`: `replicates` and `seed` (D-10), `impute_seed` (the seed of the imputation
+#' * `bootstrap`: `replicates` and `seed` (D-10), `interval` (the percentile interval, 95 for
+#'   2.5% to 97.5%, the default, or 90 for 5% to 95%, to match the project), `impute_seed`
+#'   (the seed of the imputation
 #'   of super-individuals in the bootstrap; default: `seed`), and optionally `cores` (default:
 #'   the machine's cores minus 2, at least 1, and not more than the replicates).
 #' * `catch`: `raising_factor_priority`, `Weight` (default) or `Number`, StoX's choice

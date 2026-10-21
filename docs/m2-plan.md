@@ -483,6 +483,25 @@ have. Weighting and layer settings of the mean steps are not checked. The descri
 also carries the entry counts per process-data table (`process_tables`). `survey.label` and `survey.year`
 may be `auto` (survey number from the `cruise` element of the biotic file, year from the stations).
 
+**Second official project, demersal fish (21 October 2026).** `stox_fit_check()` and the project's settings
+showed what differs from survey A: a filter on tow duration (`soaktime >= 0.25`, hours), estimates by
+family (`RedefineStoxBiotic` puts the catch-category code in `SpeciesCategory`, a translation stored in the
+project maps codes to families, and the species filter keeps a list of families), biomass from catch weights,
+reports in tonnes with 5% and 95% percentiles, and a length-measurement translation that does not affect a
+catch-weight estimate. Added for it: `inclusion.soaktime_min` (with `soaktime` in the biotic schema),
+`species_groups` (template 2.2.0: RedefineStoxBiotic, a translation from a lookup file and TranslateStoxBiotic;
+the support table counts a catch of any species of a group), `stox_translation_table()` (exports the stored
+lookup to the data zone, counts and column names only), and `bootstrap.interval` (95 or 90).
+
+**Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
+that report in different units must be comparable. Every report of the template now states its unit
+(`ton`, `10^6 individuals`), and our reports and official ones are converted by the unit they state, from
+the StoX unit list (g, kg, ton, ...; individuals, 10^3 individuals, ...); an unknown unit stops the
+conversion, it is never guessed. An official report without a unit column (survey A, StoX 3.4) is converted
+with the assumed scale and marked `unit_assumed`. An official report with a unit column was skipped by the
+old conversion; that is fixed. The bootstrap mean is the working assumption whenever a project has a
+bootstrap: `estimate.point` defaults to `bootstrap_mean` and `compare_estimates()` to the mean.
+
 **Limits to keep in view.**
 
 - The filter selects hauls by `HaulKey`, which equals `serialnumber` in the synthetic files.

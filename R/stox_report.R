@@ -57,12 +57,13 @@ tidy_report <- function(dt, codes, stratum = NULL, cols, quantity) {
 # stratum and total) into Section 9 rows. The estimate is the baseline value (or
 # the bootstrap mean, when the configuration asks for it); the CV is the bootstrap
 # SD over the bootstrap mean; the interval is the 2.5% to 97.5% percentile
-# interval of the bootstrap.
+# interval of the bootstrap (90% when configured).
 stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
                                       run_time = Sys.time(), unsampled = character(0)) {
   codes <- cfg$species
   units <- c(biomass = "tonnes", abundance = "millions")
   from_bootstrap <- identical(cfg$estimate$point, "bootstrap_mean")
+  interval <- bootstrap_interval(cfg)
   rows <- lapply(cfg$quantities, function(qty) {
     Q <- c(biomass = "Biomass", abundance = "Abundance")[[qty]]
     get <- function(prefix, part) reports[[paste0(prefix, Q, part)]]
@@ -70,7 +71,10 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
       tidy_report(get("Report", "ByStratum"), codes, cols = c(value = "_sum$"), quantity = qty),
       tidy_report(get("Report", "Total"), codes, stratum = "total", cols = c(value = "_sum$"), quantity = qty)
     )
-    boot_cols <- c(mean = "_sum_mean$", sd = "_sum_sd$", lower = "_sum_2\\.5%$", upper = "_sum_97\\.5%$")
+    lim <- c((100 - interval) / 2, 100 - (100 - interval) / 2)
+    pct <- gsub(".", "\\.", format(lim, trim = TRUE, drop0trailing = TRUE), fixed = TRUE)
+    boot_cols <- c(mean = "_sum_mean$", sd = "_sum_sd$", lower = paste0("_sum_", pct[1], "%$"),
+                   upper = paste0("_sum_", pct[2], "%$"))
     boot <- rbind(
       tidy_report(get("ReportBootstrap", "ByStratum"), codes, cols = boot_cols, quantity = qty),
       tidy_report(get("ReportBootstrap", "Total"), codes, stratum = "total", cols = boot_cols, quantity = qty)
@@ -105,7 +109,7 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
       cv = ifelse(is.finite(m$mean) & m$mean > 0, m$sd / m$mean, NA_real_),
       ci_lower = m$lower,
       ci_upper = m$upper,
-      ci_type = "bootstrap_percentile_95",
+      ci_type = paste0("bootstrap_percentile_", interval),
       config_hash = config_hash,
       code_version = code_version,
       run_time = as.POSIXct(run_time, tz = "UTC"),

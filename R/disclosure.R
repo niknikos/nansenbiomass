@@ -17,7 +17,7 @@ allowed_values <- list(
   method = c("stox_sweptarea", "sdmtmb", "stox_acoustic"),
   quantity = c("biomass", "abundance"),
   unit = c("tonnes", "kg", "millions", "thousands"),
-  ci_type = c("bootstrap_percentile_95", "model_se_95")
+  ci_type = c("bootstrap_percentile_95", "bootstrap_percentile_90", "model_se_95")
 )
 
 #' The released estimate schema

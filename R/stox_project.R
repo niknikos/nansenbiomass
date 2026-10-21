@@ -116,6 +116,9 @@ code_version_string <- function(template_version) {
          "; template sweptarea ", template_version)
 }
 
+# The percentile interval of the bootstrap, in per cent (95 unless configured)
+bootstrap_interval <- function(cfg) if (is.null(cfg$bootstrap$interval)) 95L else cfg$bootstrap$interval
+
 # Cores for the bootstrap: the configured number, else the machine's cores minus
 # 2 (at least 1), and never more than the replicates.
 bootstrap_cores <- function(cfg) {
@@ -211,6 +214,7 @@ build_stox_project <- function(cfg, inputs, project_path) {
     impute_levels = imp$levels,
     impute_seed = imp$seed,
     replicates = cfg$bootstrap$replicates,
+    percentages = c((100 - bootstrap_interval(cfg)) / 2, 100 - (100 - bootstrap_interval(cfg)) / 2),
     cores = bootstrap_cores(cfg),
     output_processes = output,
     bootstrap_method_table = boot_table,

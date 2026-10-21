@@ -347,7 +347,7 @@ test_that("the template fills completely and refuses an unfilled placeholder", {
       "species_filter_expression", "strata_file", "stratum_label", "raising_factor_priority",
       "length_interval", "length_process", "sweep_width_m", "cores", "si_distribution_method",
       "impute_method", "impute_at_missing", "impute_to", "impute_by_equal", "impute_levels",
-      "impute_seed", "baseline_seed_table", "bootstrap_method_table", "replicates",
+      "impute_seed", "baseline_seed_table", "bootstrap_method_table", "replicates", "percentages",
       "output_processes", "survey_method", "survey_table")
   )
 })
@@ -1412,6 +1412,20 @@ test_that("species groups (for example families) are estimated as the sum of the
   expect_error(run_estimate(cfg, root = s$root), "SX-GRP-02|SX-RUN-01")
   raw <- yaml::read_yaml(example_config()); raw$species_groups <- list(value_column = "Value")
   expect_error(validate_config(raw), "CF-REQ-01")
+})
+
+test_that("the bootstrap interval can be 90% to match a project", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  cfg <- quick_config(4L)
+  cfg$bootstrap$interval <- 90L
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  e <- res$estimates[!is.na(res$estimates$value) & res$estimates$value > 0, ]
+  expect_equal(unique(e$ci_type), "bootstrap_percentile_90")
+  expect_false(anyNA(e$ci_lower))
+  expect_true(all(e$ci_lower <= e$ci_upper))
+  raw <- yaml::read_yaml(example_config()); raw$bootstrap$interval <- 80
+  expect_error(validate_config(raw), "CF-VAL-01")
 })
 
 test_that("a selection that cannot be applied is refused", {
