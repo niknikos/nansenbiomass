@@ -7,9 +7,11 @@ survey:
   year: auto                 # the start year of the stations in the biotic file
 data:
   biotic:
-    - surveys/survey-B-project-copy.xml   # to confirm: the project's own copy of the biotic file
-  strata: strata/survey-B.geojson         # written by stox_strata() from the project
+    # the project's own copy of the biotic file, used where it is
+    - stox_official/2026004010_demersal_fish/input/biotic/21-2026-9387-10.xml
+  strata: strata/survey-B.geojson         # written by stox_strata() from the project's process data, 12 strata
   stratum_label: stratum                  # the label stox_strata() writes
+  # all 12 strata (Mozambique North, Central and South, 4 depth bands each); no selection needed
 inclusion:
   # Haul filter of the project:
   # gear %in% c("3032", "3033", "3034") & gearcondition %in% "1" & samplequality %in% "12" & soaktime >= 0.25
