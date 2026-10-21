@@ -1,8 +1,8 @@
 {
  "template": "sweptarea",
- "template_version": "2.1.0",
+ "template_version": "2.2.0",
  "stox_version": "4.2.1",
- "description": "StoX swept-area chain. Abundance from length distributions (optionally regrouped); biomass either from catch weight (total_catch) or through super-individuals (super_individuals, as in many StoX projects); one PSU per station; bootstrap of the mean length distribution; species and station filters. Structure only (class C3); filled from a survey configuration by the package, never edited by hand.",
+ "description": "StoX swept-area chain. Abundance from length distributions (optionally regrouped); biomass either from catch weight (total_catch) or through super-individuals (super_individuals, as in many StoX projects); one PSU per station; bootstrap of the mean length distribution; species and station filters; optionally species grouped (for example by family) through a lookup of catch categories. Structure only (class C3); filled from a survey configuration by the package, never edited by hand.",
  "processes": [
   {
    "model": "baseline",
@@ -22,6 +22,46 @@
   },
   {
    "model": "baseline",
+   "name": "RedefineSpecies",
+   "function": "RstoxData::RedefineStoxBiotic",
+   "inputs": {
+    "StoxBioticData": "StoxBiotic",
+    "BioticData": "ReadBiotic"
+   },
+   "parameters": {
+    "Redefinition": "{{species_redefinition}}",
+    "SplitTableAllocation": "Default"
+   },
+   "when": "species_groups"
+  },
+  {
+   "model": "baseline",
+   "name": "SpeciesGroupTranslation",
+   "function": "RstoxData::DefineTranslation",
+   "parameters": {
+    "DefinitionMethod": "ResourceFile",
+    "FileName": "{{species_groups_file}}",
+    "VariableName": "SpeciesCategory",
+    "ValueColumn": "Value",
+    "NewValueColumn": "Group"
+   },
+   "when": "species_groups"
+  },
+  {
+   "model": "baseline",
+   "name": "TranslateSpecies",
+   "function": "RstoxData::TranslateStoxBiotic",
+   "inputs": {
+    "StoxBioticData": "RedefineSpecies",
+    "Translation": "SpeciesGroupTranslation"
+   },
+   "parameters": {
+    "TranslationDefinition": "FunctionInput"
+   },
+   "when": "species_groups"
+  },
+  {
+   "model": "baseline",
    "name": "Translation",
    "function": "RstoxData::DefineTranslation",
    "parameters": {
@@ -38,7 +78,7 @@
    "name": "TranslateStoxBiotic",
    "function": "RstoxData::TranslateStoxBiotic",
    "inputs": {
-    "StoxBioticData": "StoxBiotic",
+    "StoxBioticData": "{{stoxbiotic_base}}",
     "Translation": "Translation"
    },
    "parameters": {
@@ -373,7 +413,8 @@
     "GroupingVariables": [
      "Stratum",
      "SpeciesCategory"
-    ]
+    ],
+    "TargetVariableUnit": "ton"
    },
    "when": "catch_biomass"
   },
@@ -396,7 +437,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "TargetVariableUnit": "ton"
    },
    "when": "catch_biomass"
   },
@@ -413,7 +455,8 @@
     "GroupingVariables": [
      "Survey",
      "SpeciesCategory"
-    ]
+    ],
+    "TargetVariableUnit": "ton"
    },
    "when": "catch_biomass"
   },
@@ -436,7 +479,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "TargetVariableUnit": "ton"
    },
    "when": "catch_biomass"
   },
@@ -454,7 +498,8 @@
      "Stratum",
      "SpeciesCategory"
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "ton"
    },
    "when": "si_biomass"
   },
@@ -478,7 +523,8 @@
      2.5,
      97.5
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "ton"
    },
    "when": "si_biomass"
   },
@@ -496,7 +542,8 @@
      "Survey",
      "SpeciesCategory"
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "ton"
    },
    "when": "si_biomass"
   },
@@ -520,7 +567,8 @@
      2.5,
      97.5
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "ton"
    },
    "when": "si_biomass"
   },
@@ -537,7 +585,8 @@
     "GroupingVariables": [
      "Stratum",
      "SpeciesCategory"
-    ]
+    ],
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "catch_abundance"
   },
@@ -560,7 +609,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "catch_abundance"
   },
@@ -577,7 +627,8 @@
     "GroupingVariables": [
      "Survey",
      "SpeciesCategory"
-    ]
+    ],
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "catch_abundance"
   },
@@ -600,7 +651,8 @@
     "Percentages": [
      2.5,
      97.5
-    ]
+    ],
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "catch_abundance"
   },
@@ -618,7 +670,8 @@
      "Stratum",
      "SpeciesCategory"
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "si_abundance"
   },
@@ -642,7 +695,8 @@
      2.5,
      97.5
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "si_abundance"
   },
@@ -660,7 +714,8 @@
      "Survey",
      "SpeciesCategory"
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "si_abundance"
   },
@@ -684,7 +739,8 @@
      2.5,
      97.5
     ],
-    "RemoveMissingValues": true
+    "RemoveMissingValues": true,
+    "TargetVariableUnit": "10^6 individuals"
    },
    "when": "si_abundance"
   }

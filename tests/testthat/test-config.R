@@ -93,7 +93,7 @@ test_that("the biomass route, lengths and estimate blocks are validated", {
   cfg <- validate_config(raw())
   expect_equal(cfg$biomass$method, "total_catch")
   expect_true(is.na(cfg$lengths$interval_cm))
-  expect_equal(cfg$estimate$point, "baseline")
+  expect_equal(cfg$estimate$point, "bootstrap_mean")
   x <- raw()
   x$biomass <- list(method = "super_individuals", distribution_method = "HaulDensity",
                     imputation = list(levels = c("Haul", "Survey"), seed = 5,

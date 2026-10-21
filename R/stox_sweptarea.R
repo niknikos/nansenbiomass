@@ -706,6 +706,32 @@ resolve_survey_id <- function(cfg, survey) {
   cfg
 }
 
+# The lookup of catch categories to species groups (for example families), read from the data
+# zone: a table of code and group, both as text. NULL when the configuration has no groups.
+read_species_groups <- function(cfg, root) {
+  sg <- cfg$species_groups
+  if (is.null(sg)) return(NULL)
+  tab <- tryCatch(
+    data.table::fread(resolve_data_path(sg$file, root), colClasses = "character", encoding = "UTF-8",
+                      showProgress = FALSE),
+    error = function(e) nb_abort("SX-GRP-01", "The species-group file could not be read as a table.")
+  )
+  if (!all(c(sg$value_column, sg$group_column) %in% names(tab))) {
+    nb_abort("SX-GRP-01", "The species-group file lacks the columns named in species_groups.")
+  }
+  out <- data.frame(value = trimws(tab[[sg$value_column]]), group = trimws(tab[[sg$group_column]]),
+                    stringsAsFactors = FALSE)
+  out <- unique(out[!is.na(out$value) & nzchar(out$value) & !is.na(out$group) & nzchar(out$group), ])
+  dup <- unique(out$value[duplicated(out$value)])
+  if (length(dup)) {
+    nb_abort("SX-GRP-02", paste0(length(dup), " catch categories are assigned to more than one group in the species-group file."))
+  }
+  if (any(grepl("['\"\\\\]", out$group))) {
+    nb_abort("SX-GRP-03", "A group name contains a quote or backslash that a StoX filter cannot take.")
+  }
+  out
+}
+
 # Applies the inclusion rules (D-09) to the station table. The single source of
 # truth for which stations are kept: inclusion_summary() reports counts from it
 # and the StoX project is built from the same result. The returned `keep`,
@@ -728,6 +754,13 @@ apply_inclusion <- function(st, cfg, polygons, exclude = NULL) {
     if (!is.null(allowed)) {
       step(paste0(f, " in {", paste(allowed, collapse = ", "), "}"), !st[[f]] %in% allowed)
     }
+  }
+  # Minimum tow duration (soaktime, hours), as in a StoX filter `soaktime >= x`: a station without
+  # a duration fails it, as it does in StoX
+  if (!is.null(cfg$inclusion$soaktime_min)) {
+    tow <- if ("soaktime" %in% names(st)) suppressWarnings(as.numeric(st$soaktime)) else rep(NA_real_, nrow(st))
+    step(sprintf("soaktime >= %s h", format(cfg$inclusion$soaktime_min)),
+         is.na(tow) | tow < cfg$inclusion$soaktime_min)
   }
   # Stations listed in the exclusion file (serial numbers; station-level, kept in the data zone)
   if (!is.null(exclude)) {
@@ -928,8 +961,14 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       st <- survey$station
       keys <- as.character(st$serialnumber[inc$keep])
 
-      # The species of the estimate, as StoX names them
-      categories <- stox_species_categories(files, cfg$species)
+      # The species (or species groups) of the estimate, as StoX names them
+      groups <- read_species_groups(cfg, root)
+      if (is.null(groups)) {
+        categories <- stox_species_categories(files, cfg$species)
+      } else {
+        present <- unique(groups$group[groups$value %in% as.character(survey$catch$catchcategory)])
+        categories <- intersect(cfg$species, present)
+      }
       found <- species_from_category(categories, cfg$species)
       if (length(categories) == 0L) {
         nb_abort("SX-SPC-01", "None of the configured species is in the biotic files.")
@@ -958,7 +997,7 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       built <- build_stox_project(
         cfg, list(biotic_files = files, strata_polygons = selected, keep_keys = keys,
                   species_categories = categories, translation = translation,
-                  total_strata = total_strata),
+                  total_strata = total_strata, species_groups = groups),
         project_path
       )
       r <- log_stox_messages(
@@ -984,7 +1023,7 @@ run_estimate <- function(config, root = data_root(), staging_dir = file.path(roo
       }
 
       cv <- code_version_string(built$template_version)
-      support <- stox_support_table(survey, inc$keep, inc$stratum, cfg)
+      support <- stox_support_table(survey, inc$keep, inc$stratum, cfg, groups)
       unsampled <- setdiff(cfg$data$stratum_names,
                            unique(inc$stratum[inc$keep]))
       estimates <- stox_reports_to_estimates(r, cfg, hash, cv, unsampled = unsampled)
@@ -1033,7 +1072,7 @@ stox_known_functions <- c(
 
 # Fields that the inclusion rules of the template can reproduce
 stox_supported_filter_fields <- c("gear", "gearcondition", "samplequality", "stationtype", "station",
-                                  "haulkey", "speciescategory", "effectivetowdistance")
+                                  "haulkey", "speciescategory", "effectivetowdistance", "soaktime")
 
 stox_fit_rows <- function(d) {
   p <- d$processes

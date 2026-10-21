@@ -145,8 +145,9 @@ stox_species_categories <- function(files, codes) {
 #
 # `inputs`: biotic_files, strata_polygons (the selected strata, as sf), keep_keys (HaulKey values of the stations
 # to keep), species_categories (the StoX species categories to keep), translation
-# (NULL or a table of EffectiveTowDistance, NewValue and HaulKey) and total_strata
-# (strata that count towards the total).
+# (NULL or a table of EffectiveTowDistance, NewValue and HaulKey), total_strata
+# (strata that count towards the total) and species_groups (NULL, or a table of catch-category
+# `value` and `group`, for estimates by group).
 build_stox_project <- function(cfg, inputs, project_path) {
   tpl <- read_stox_template()
   q <- cfg$quantities
@@ -156,6 +157,7 @@ build_stox_project <- function(cfg, inputs, project_path) {
     biomass = has("biomass"), abundance = has("abundance"),
     route_catch = route == "total_catch", route_si = route == "super_individuals",
     distance_translation = !is.null(inputs$translation),
+    species_groups = !is.null(inputs$species_groups),
     regroup = !is.na(cfg$lengths$interval_cm),
     abundance_branch = (route == "total_catch" && has("abundance")) || route == "super_individuals",
     catch_biomass = route == "total_catch" && has("biomass"),
@@ -189,7 +191,11 @@ build_stox_project <- function(cfg, inputs, project_path) {
     biotic_files = inputs$biotic_files,
     strata_file = file.path(project_path, "strata-selected.wkt"),
     stratum_label = cfg$data$stratum_label,
-    stoxbiotic_process = if (flags$distance_translation) "TranslateStoxBiotic" else "StoxBiotic",
+    stoxbiotic_base = if (flags$species_groups) "TranslateSpecies" else "StoxBiotic",
+    stoxbiotic_process = if (flags$distance_translation) "TranslateStoxBiotic" else
+      if (flags$species_groups) "TranslateSpecies" else "StoxBiotic",
+    species_redefinition = data.table::data.table(VariableName = "SpeciesCategory", ReplaceBy = "catchcategory"),
+    species_groups_file = file.path(project_path, "species-groups.csv"),
     filter_expression = list(Haul = paste0("HaulKey %in% c(", keys, ")")),
     species_filter_expression = list(SpeciesCategory = paste0("SpeciesCategory %in% c(", cats, ")")),
     translation_table = inputs$translation,
@@ -222,6 +228,12 @@ build_stox_project <- function(cfg, inputs, project_path) {
   writeLines(paste0(as.character(polys[[cfg$data$stratum_label]]), "\t",
                     sf::st_as_text(sf::st_geometry(polys), digits = 15)),
              values$strata_file)
+  # The species-group lookup travels with the project, as text, in two fixed columns
+  if (flags$species_groups) {
+    data.table::fwrite(data.table::data.table(Value = inputs$species_groups$value,
+                                              Group = inputs$species_groups$group),
+                       values$species_groups_file, quote = TRUE)
+  }
   for (proc in tpl$processes) {
     if (!template_active(proc, flags)) next
     spec <- list(processName = proc$name, functionName = proc$`function`)

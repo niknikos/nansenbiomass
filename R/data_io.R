@@ -54,6 +54,7 @@ biotic_schema <- function() {
     "station",    "fishstation", "trawldoorspread",    "double",    "element",   FALSE, "m",
     "station",    "fishstation", "haulvalidity",       "character", "element",   FALSE, NA,
     "station",    "fishstation", "gearno",             "integer",   "element",   FALSE, NA,
+    "station",    "fishstation", "soaktime",           "double",    "element",   FALSE, "hours",
     "catch",      "catchsample", "catchsampleid",      "integer",   "attribute", TRUE,  NA,
     "catch",      "catchsample", "catchcategory",      "character", "element",   FALSE, NA,
     "catch",      "catchsample", "commonname",         "character", "element",   FALSE, NA,

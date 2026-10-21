@@ -130,6 +130,13 @@ validate_config <- function(cfg) {
   if (!is.null(inc$exclude_stations_file)) {
     check_config_path(inc$exclude_stations_file, "inclusion.exclude_stations_file")
   }
+  # optional minimum tow duration (soaktime, hours); stations below it or without one are left out
+  if (!is.null(inc$soaktime_min)) {
+    if (!is.numeric(inc$soaktime_min) || length(inc$soaktime_min) != 1L || is.na(inc$soaktime_min) ||
+        inc$soaktime_min < 0) {
+      cf_abort("CF-VAL-02", "inclusion.soaktime_min", "must be a tow duration in hours, zero or more")
+    }
+  }
   cfg$inclusion <- inc
 
   # swept width
@@ -146,6 +153,21 @@ validate_config <- function(cfg) {
 
   # species and quantities
   cfg$species <- as_codes(cfg$species, "species")
+  # optional grouping of catch categories (for example into families): a lookup file in the data
+  # zone with a column of catch-category codes and a column of group names; `species` then names groups
+  sg <- cfg$species_groups
+  if (!is.null(sg)) {
+    if (!is.list(sg) || !is_string(sg$file)) {
+      cf_abort("CF-REQ-01", "species_groups.file", "is required when species_groups is given")
+    }
+    check_config_path(sg$file, "species_groups.file")
+    sg$value_column <- if (is.null(sg$value_column)) "Value" else sg$value_column
+    sg$group_column <- if (is.null(sg$group_column)) "Family" else sg$group_column
+    for (f in c("value_column", "group_column")) {
+      if (!is_string(sg[[f]])) cf_abort("CF-TYPE-01", paste0("species_groups.", f), "must name a column")
+    }
+    cfg$species_groups <- sg
+  }
   q <- if (is.null(cfg$quantities)) "biomass" else as.character(unlist(cfg$quantities))
   if (length(q) == 0L || !all(q %in% config_quantities)) {
     cf_abort("CF-VAL-01", "quantities", "must be biomass and/or abundance")
@@ -227,8 +249,9 @@ validate_config <- function(cfg) {
     )
   )
 
-  # which value is reported as the estimate: the baseline run, or the bootstrap mean
-  point <- if (is.null(cfg$estimate$point)) "baseline" else cfg$estimate$point
+  # which value is reported as the estimate: the bootstrap mean (the working assumption whenever a
+  # project has a bootstrap; decision of the project lead, 21 October 2026), or the baseline run
+  point <- if (is.null(cfg$estimate$point)) "bootstrap_mean" else cfg$estimate$point
   if (!is_string(point) || !point %in% c("baseline", "bootstrap_mean")) {
     cf_abort("CF-VAL-01", "estimate.point", "must be baseline or bootstrap_mean")
   }
@@ -281,11 +304,19 @@ validate_config <- function(cfg) {
 #'   (`none`, the default, `log` or `log_or_positions`), and optionally
 #'   `exclude_stations_file`, the path (relative to the data root) of a text file in the
 #'   data zone listing the serial numbers of stations to leave out, one per line (see
-#'   [stox_station_exclusions()]); station identifiers never belong in the repository. See
+#'   [stox_station_exclusions()]); station identifiers never belong in the repository;
+#'   and optionally `soaktime_min`, a minimum tow duration in hours (the StoX filter
+#'   `soaktime >= x`; stations without a duration are left out, as in StoX). See
 #'   `docs/nansis-codes.md` for the codes (D-09).
 #' * `swept_width`: `method` (`fixed` or `trawldoorspread`) and `fixed_m` (the
 #'   width in metres, or the fallback where a door spread is missing).
 #' * `species`: species codes; `quantities`: `biomass` and/or `abundance`.
+#' * `species_groups` (optional): estimates by groups of species, for example families, as
+#'   StoX projects do with `RedefineStoxBiotic` and a translation. `file` is a lookup table in
+#'   the data zone (relative to the data root; comma, semicolon or tab separated) with a column
+#'   of catch-category codes (`value_column`, default `Value`) and a column of group names
+#'   (`group_column`, default `Family`); `species` then lists group names. See
+#'   [stox_translation_table()] to export the lookup stored in an official project.
 #' * `bootstrap`: `replicates` and `seed` (D-10), `impute_seed` (the seed of the imputation
 #'   of super-individuals in the bootstrap; default: `seed`), and optionally `cores` (default:
 #'   the machine's cores minus 2, at least 1, and not more than the replicates).
@@ -299,8 +330,8 @@ validate_config <- function(cfg) {
 #'   `distribution_method` (`Equal` or `HaulDensity`) and `imputation` with `method`
 #'   (`RandomSampling`), `levels` (any of `Haul`, `Stratum`, `Survey`), `at_missing`, `to_impute`,
 #'   `by_equal` (StoX variable names) and `seed`.
-#' * `estimate`: `point`, `baseline` (default) or `bootstrap_mean`: which value is reported as the
-#'   estimate.
+#' * `estimate`: `point`, `bootstrap_mean` (default: the working assumption whenever a project has
+#'   a bootstrap) or `baseline`: which value is reported as the estimate.
 #' * `stox`: `version`, the RstoxFramework version the run must use.
 #' * `disclosure`: `min_stations` and `min_positive`, at least 5 and 3 (D-03).
 #'
@@ -353,6 +384,7 @@ print.nb_config <- function(x, ...) {
                 if (is.null(v)) "any" else paste(v, collapse = ", ")))
   }
   cat("  positive distance:", x$inclusion$positive_distance, "\n")
+  if (!is.null(x$inclusion$soaktime_min)) cat("  tow duration at least:", x$inclusion$soaktime_min, "h\n")
   cat("  swept width:", x$swept_width$method, "(", x$swept_width$fixed_m, "m )\n")
   cat("  bootstrap:", x$bootstrap$replicates, "replicates, seed", x$bootstrap$seed, "\n")
   cat("  biomass route:", x$biomass$method, "\n")

@@ -437,7 +437,9 @@ synth_survey_impl <- function(design, seed) {
     verticaltrawlopening = round(stats::runif(n_st, 4.5, 5.5), 1),
     trawldoorspread = stations$trawldoorspread,
     haulvalidity = NA_character_,
-    gearno = NA_integer_
+    gearno = NA_integer_,
+    # tow duration in hours (NMDBiotic soaktime): distance over the speed above
+    soaktime = 0.5
   )
   stations$serialnumber <- station$serialnumber
 

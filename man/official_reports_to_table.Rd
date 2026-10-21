@@ -12,25 +12,33 @@ official_reports_to_table(
 \arguments{
 \item{reports}{A list of report tables (\code{data.frame}s).}
 
-\item{scale}{Named multipliers for \code{biomass} and \code{abundance}.}
+\item{scale}{Named multipliers for \code{biomass} and \code{abundance}, used only for reports
+that state no unit. The default assumes grams and individuals, as older StoX
+super-individual reports give.}
 }
 \value{
-A tibble with \code{process}, \code{kind} (\code{baseline} or \code{bootstrap}),
-\code{quantity}, \code{stratum}, \code{species_category} and the value columns \code{baseline},
-\code{mean}, \code{sd}, \code{cv}, \code{lower} and \code{upper} that are present.
+A tibble with \code{process}, \code{kind} (\code{baseline} or \code{bootstrap}), \code{quantity},
+\code{stratum}, \code{species_category}, \code{unit} (as reported, or \code{NA}), \code{unit_assumed},
+\code{interval} (the percentile interval in per cent, for example 95 or 90) and the value
+columns \code{baseline}, \code{mean}, \code{sd}, \code{cv}, \code{lower} and \code{upper} that are present.
 }
 \description{
 Turns the report outputs of a StoX project (for example from
-\code{\link[=stox_official_copy_run]{stox_official_copy_run()}}) into a table with one row per quantity, stratum
-(or \code{total}) and species category, with the baseline value or the bootstrap
-mean, SD, CV and percentile limits where the report has them. Only reports
-grouped by stratum, species category and survey are used; reports by length
-group are skipped. Values are multiplied by \code{scale}; StoX reports
-super-individual biomass in grams and abundance in numbers, so the default
-converts to tonnes and millions. Check the units of your project: a ratio far
-from 1 in \code{\link[=compare_estimates]{compare_estimates()}} is the sign of a wrong scale.
+\code{\link[=stox_official_copy_run]{stox_official_copy_run()}} or \code{\link[=stox_saved_reports]{stox_saved_reports()}}) into a table with one row per
+quantity, stratum (or \code{total}) and species category, with the baseline value or the
+bootstrap mean, SD, CV and percentile limits where the report has them. Only reports
+grouped by stratum, species category and survey are used; reports by length group are
+skipped.
+}
+\details{
+Values are converted to tonnes (biomass) and millions of individuals (abundance) from
+the unit each report states in its \code{Unit} column (StoX units such as \code{g}, \code{kg}, \code{ton},
+\code{individuals} or \verb{10^6 individuals}), so that projects reporting in different units are
+comparable. A unit the package does not know stops the conversion. A report without a
+\code{Unit} column (older projects) is converted with \code{scale}, and the table marks it
+(\code{unit_assumed}); check those against the project.
 }
 \examples{
-reports <- list(R = data.frame(Stratum = c("A", "B"), Biomass_sum = c(2e6, 3e6)))
+reports <- list(R = data.frame(Stratum = c("A", "B"), Biomass_sum = c(2, 3), Unit = "ton"))
 official_reports_to_table(reports)
 }

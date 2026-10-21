@@ -7,7 +7,7 @@
 compare_estimates(
   x,
   reference,
-  reference_value = c("baseline", "mean"),
+  reference_value = c("mean", "baseline"),
   tolerance = 0.01,
   replicates = NULL,
   species = NULL
@@ -19,7 +19,7 @@ compare_estimates(
 
 \item{reference}{A table from \code{\link[=official_reports_to_table]{official_reports_to_table()}}.}
 
-\item{reference_value}{\code{baseline} or \code{mean} (the bootstrap mean): which
+\item{reference_value}{\code{mean} (the bootstrap mean, the default) or \code{baseline}: which
 reference value to compare our \code{value} with.}
 
 \item{tolerance}{Relative tolerance for the flag \code{within}.}
@@ -49,5 +49,5 @@ ours <- tibble::tibble(species_code = "SP1", stratum = c("A", "total"), quantity
                        value = c(2.01, 5.0), cv = c(0.2, 0.1))
 reference <- official_reports_to_table(list(R = data.frame(
   Stratum = "A", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 2e6)))
-compare_estimates(ours, reference)
+compare_estimates(ours, reference, "baseline")
 }

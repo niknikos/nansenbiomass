@@ -306,6 +306,8 @@ skip_if_no_stox <- function() {
 quick_config <- function(replicates = 5L) {
   cfg <- read_config(example_config())
   cfg$bootstrap$replicates <- as.integer(replicates)
+  # the tests compare the deterministic baseline with direct calculations
+  cfg$estimate$point <- "baseline"
   cfg
 }
 
@@ -340,7 +342,8 @@ test_that("the template fills completely and refuses an unfilled placeholder", {
   )))
   expect_setequal(
     gsub("[{}]", "", used),
-    c("biotic_files", "translation_table", "stoxbiotic_process", "filter_expression",
+    c("biotic_files", "species_redefinition", "species_groups_file", "stoxbiotic_base",
+      "translation_table", "stoxbiotic_process", "filter_expression",
       "species_filter_expression", "strata_file", "stratum_label", "raising_factor_priority",
       "length_interval", "length_process", "sweep_width_m", "cores", "si_distribution_method",
       "impute_method", "impute_at_missing", "impute_to", "impute_by_equal", "impute_levels",
@@ -376,7 +379,7 @@ test_that("run_estimate() reproduces the direct estimate and stages a passing ex
   expect_match(unique(est$config_hash), "^[0-9a-f]{32}$")
   expect_equal(unique(est$config_hash), config_hash(example_config()))
   expect_match(unique(est$code_version), "RstoxFramework 4\\.2\\.1; RstoxBase 2\\.2\\.1; RstoxData 2\\.2\\.1")
-  expect_match(unique(est$code_version), "template sweptarea 2\\.1\\.0$")
+  expect_match(unique(est$code_version), "template sweptarea 2\\.2\\.0$")
   expect_true(all(est$value >= 0))
 
   # The baseline estimate equals the direct design-based estimate, which uses
@@ -672,7 +675,7 @@ test_that("biomass through super-individuals agrees with the catch-weight route"
   cfg$lengths$interval_cm <- 2
   b <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "stB")))
   expect_equal(b$staged$outcome, "pass")
-  expect_match(unique(b$estimates$code_version), "template sweptarea 2\\.1\\.0$")
+  expect_match(unique(b$estimates$code_version), "template sweptarea 2\\.2\\.0$")
   key <- c("species_code", "stratum", "quantity")
   m <- merge(a$estimates[c(key, "value", "unit")], b$estimates[c(key, "value", "unit")], by = key,
              suffixes = c(".catch", ".si"))
@@ -835,7 +838,7 @@ test_that("saved report files are read, and an official table can stand in for x
   a <- official_reports_to_table(saved)
   b <- official_reports_to_table(list(R1 = data.frame(
     Stratum = c("A", "B"), SpeciesCategory = "x/SP1/NA/s", Abundance_sum = c(2e6, 3.3e6))))
-  expect_error(compare_estimates(a, b), "SX-CMP-04")
+  expect_error(compare_estimates(a, b, "baseline"), "SX-CMP-04")
   cmp <- compare_estimates(a, b, "baseline", species = "SP1")
   expect_equal(cmp$ratio, c(1, 3 / 3.3), tolerance = 1e-9)
 })
@@ -907,6 +910,27 @@ test_that("stox_fit_check() accepts a project made by the template and flags wha
   expect_match(o$detail[o$feature == "Other processes"], "SomethingNew")
 })
 
+test_that("the translation table of an official project is exported to the data zone, counts only", {
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "p", "process"), recursive = TRUE)
+  jsonlite::write_json(list(project = list(models = list(baseline = list(
+    list(processName = "ReadBiotic", functionName = "RstoxData::ReadBiotic"),
+    list(processName = "DefineTranslation_SpeciesCategory", functionName = "RstoxData::DefineTranslation",
+         processData = list(Translation = list(list(SpeciesCategory = "164712", NewValue = "Sparidae"),
+                                               list(SpeciesCategory = "164713", NewValue = "Sparidae"),
+                                               list(SpeciesCategory = "200000", NewValue = "Bothidae"))))
+  )))), file.path(root, "p", "process", "project.json"), auto_unbox = TRUE)
+  shown <- utils::capture.output(tr <- stox_translation_table("p", "lookups/f.csv", root = root))
+  expect_s3_class(tr, "nb_translation")
+  expect_equal(tr$n_rows, 3L)
+  expect_equal(tr$columns, c("SpeciesCategory", "NewValue"))
+  expect_false(any(grepl("164712|Sparidae", shown)))
+  tab <- utils::read.csv(file.path(root, "lookups", "f.csv"), colClasses = "character")
+  expect_equal(tab$SpeciesCategory, c("164712", "164713", "200000"))
+  expect_error(stox_translation_table("p", "lookups/f.csv", root = root), "SX-TRN-02")
+  expect_error(stox_translation_table("p", "lookups/g.csv", process = "Nope", root = root), "SX-TRN-01")
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))
@@ -950,6 +974,23 @@ test_that("StoX report tables are converted to a comparable table", {
   expect_equal(t$kind, "bootstrap")
   expect_equal(c(t$mean, t$sd, t$cv, t$lower, t$upper), c(5, 0.5, 0.1, 4, 6))   # millions; the CV is not scaled
   expect_equal(official_reports_to_table(reports, scale = c(biomass = 1, abundance = 1))$baseline[1], 2e6)
+  expect_true(all(tab$unit_assumed))                                 # no Unit column: scale assumed
+  # a stated unit decides the conversion, whatever the project used
+  stated <- list(
+    t = data.frame(Survey = "Survey", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 7, Unit = "ton"),
+    k = data.frame(Survey = "Survey", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 7000, Unit = "kg"),
+    n = data.frame(Survey = "Survey", SpeciesCategory = "n/SP1/NA/s", Abundance_sum = 3e6, Unit = "individuals"),
+    b = data.frame(Survey = "Survey", SpeciesCategory = "n/SP1/NA/s", `Biomass_sum_5%` = 5, `Biomass_sum_50%` = 6,
+                   `Biomass_sum_95%` = 9, Biomass_sum_mean = 6.5, Unit = "ton", check.names = FALSE)
+  )
+  st <- official_reports_to_table(stated)
+  expect_equal(st$baseline[st$process %in% c("t", "k")], c(7, 7))
+  expect_equal(st$baseline[st$process == "n"], 3)
+  expect_false(any(st$unit_assumed))
+  expect_equal(c(st$lower[st$process == "b"], st$upper[st$process == "b"], st$interval[st$process == "b"]),
+               c(5, 9, 90))
+  expect_error(official_reports_to_table(list(x = data.frame(Survey = "Survey", Biomass_sum = 1, Unit = "stone"))),
+               "SX-UNIT-01")
   # an empty row (a stratum without a catch of the species) is dropped
   empty <- list(r = data.frame(Stratum = c("A", "C"), SpeciesCategory = c("n/SP1/NA/s", NA),
                                Biomass_sum = c(2e6, NA)))
@@ -964,7 +1005,8 @@ test_that("compare_estimates() reports ratios, flags, and refuses empty comparis
                       Biomass_sum = c(2e6, 1e6)),
     tot = data.frame(Survey = "Survey", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 5e6)
   ))
-  cmp <- compare_estimates(ours, ref)
+  expect_error(compare_estimates(ours, ref), "SX-CMP-01")              # the default is the bootstrap mean
+  cmp <- compare_estimates(ours, ref, "baseline")
   expect_s3_class(cmp, "nb_comparison")
   expect_equal(nrow(cmp), 3L)
   expect_equal(cmp$ratio[cmp$stratum == "A" & cmp$species_code == "SP1"], 1.005)
@@ -973,10 +1015,9 @@ test_that("compare_estimates() reports ratios, flags, and refuses empty comparis
   expect_equal(cmp$ratio[cmp$species_code == "SP2"], 1)
   expect_true(all(is.na(cmp$cv_ratio)))                              # the reference has no CV
   expect_output(print(cmp), "3 rows, 3 with a ratio, 2 within tolerance")
-  expect_equal(compare_estimates(ours, ref, tolerance = 0.2)$within, rep(TRUE, 3))
-  expect_error(compare_estimates(ours, ref, "mean"), "SX-CMP-01")    # no bootstrap values
+  expect_equal(compare_estimates(ours, ref, "baseline", tolerance = 0.2)$within, rep(TRUE, 3))
   other <- ref; other$stratum <- "Z"
-  expect_error(compare_estimates(ours, other), "SX-CMP-02")
+  expect_error(compare_estimates(ours, other, "baseline"), "SX-CMP-02")
 })
 
 test_that("a copy of a project reproduces our estimates and the original is left untouched", {
@@ -1312,6 +1353,65 @@ test_that("survey.label and survey.year can follow the biotic file", {
   expect_error(resolve_survey_id(cfg, two), "SX-LABEL-01")
   raw <- yaml::read_yaml(example_config()); raw$survey$year <- "later"
   expect_error(validate_config(raw), "CF-TYPE-01")
+})
+
+test_that("a minimum tow duration leaves out short and undocumented tows", {
+  s <- synthetic_root()
+  # three tows shortened, one without a duration, in a copy of the synthetic file
+  sv <- s$sv$survey
+  short <- sv$station$serialnumber[1:3]
+  sv$station$soaktime[sv$station$serialnumber %in% short] <- 0.2
+  sv$station$soaktime[4] <- NA_real_
+  write_biotic(sv, file.path(s$root, "surveys", "tows.xml"))
+  cfg <- quick_config()
+  cfg$data$biotic <- "surveys/tows.xml"
+  cfg$inclusion$soaktime_min <- 0.25
+  r <- inclusion_summary(cfg, root = s$root)$rules
+  row <- r[grepl("^soaktime", r$rule), ]
+  expect_equal(row$rule, "soaktime >= 0.25 h")
+  # the planted stations may already fail an earlier rule; those that reach this step are counted
+  no_rule <- cfg; no_rule$inclusion$soaktime_min <- NULL
+  kept_before <- inclusion_summary(no_rule, root = s$root)$rules
+  expect_gt(row$n_excluded, 0L)
+  expect_lte(row$n_excluded, 4L)
+  expect_equal(r$n_after[nrow(r)], kept_before$n_after[nrow(kept_before)] - row$n_excluded)
+  raw <- yaml::read_yaml(example_config()); raw$inclusion$soaktime_min <- -1
+  expect_error(validate_config(raw), "CF-VAL-02")
+})
+
+test_that("species groups (for example families) are estimated as the sum of their species", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  dir.create(file.path(s$root, "lookups"))
+  # a lookup with an extra column and a code not in the survey, as a real species list has
+  utils::write.csv(data.frame(Value = c("SYN001", "SYN002", "SYN003", "SYN999"),
+                              Family = c("FamA", "FamA", "FamB", "FamZ"), Other = "x"),
+                   file.path(s$root, "lookups", "families.csv"), row.names = FALSE)
+  cfg <- quick_config(2L)
+  cfg$species <- c("FamA", "FamB")
+  cfg$species_groups <- list(file = "lookups/families.csv", value_column = "Value", group_column = "Family")
+  cfg$quantities <- "biomass"
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st")))
+  b <- res$estimates[res$estimates$quantity == "biomass" & res$estimates$stratum != "total", ]
+  expect_setequal(unique(b$species_code), c("FamA", "FamB"))
+  fam_a <- direct_biomass(s$sv, "SYN001") + direct_biomass(s$sv, "SYN002")[names(direct_biomass(s$sv, "SYN001"))]
+  got <- b[b$species_code == "FamA", ]
+  expect_equal(got$value, as.numeric(fam_a[got$stratum]), tolerance = 1e-6)
+  got_b <- b[b$species_code == "FamB", ]
+  dir_b <- direct_biomass(s$sv, "SYN003")
+  expect_equal(got_b$value, as.numeric(dir_b[got_b$stratum]), tolerance = 1e-6)
+  # positive stations count a catch of any species of the group
+  sup <- res$support[res$support$species_code == "FamA", ]
+  expect_true(all(sup$n_positive <= sup$n_stations))
+  expect_gt(sum(sup$n_positive), 0L)
+  expect_true(file.exists(file.path(res$project_path, "species-groups.csv")))
+  # a lookup that assigns one code to two groups is refused
+  utils::write.csv(data.frame(Value = c("SYN001", "SYN001"), Family = c("FamA", "FamB")),
+                   file.path(s$root, "lookups", "bad.csv"), row.names = FALSE)
+  cfg$species_groups$file <- "lookups/bad.csv"
+  expect_error(run_estimate(cfg, root = s$root), "SX-GRP-02|SX-RUN-01")
+  raw <- yaml::read_yaml(example_config()); raw$species_groups <- list(value_column = "Value")
+  expect_error(validate_config(raw), "CF-REQ-01")
 })
 
 test_that("a selection that cannot be applied is refused", {

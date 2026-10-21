@@ -39,11 +39,19 @@ codes (a field left out means no restriction), \code{positive_distance}
 (\code{none}, the default, \code{log} or \code{log_or_positions}), and optionally
 \code{exclude_stations_file}, the path (relative to the data root) of a text file in the
 data zone listing the serial numbers of stations to leave out, one per line (see
-\code{\link[=stox_station_exclusions]{stox_station_exclusions()}}); station identifiers never belong in the repository. See
+\code{\link[=stox_station_exclusions]{stox_station_exclusions()}}); station identifiers never belong in the repository;
+and optionally \code{soaktime_min}, a minimum tow duration in hours (the StoX filter
+\code{soaktime >= x}; stations without a duration are left out, as in StoX). See
 \code{docs/nansis-codes.md} for the codes (D-09).
 \item \code{swept_width}: \code{method} (\code{fixed} or \code{trawldoorspread}) and \code{fixed_m} (the
 width in metres, or the fallback where a door spread is missing).
 \item \code{species}: species codes; \code{quantities}: \code{biomass} and/or \code{abundance}.
+\item \code{species_groups} (optional): estimates by groups of species, for example families, as
+StoX projects do with \code{RedefineStoxBiotic} and a translation. \code{file} is a lookup table in
+the data zone (relative to the data root; comma, semicolon or tab separated) with a column
+of catch-category codes (\code{value_column}, default \code{Value}) and a column of group names
+(\code{group_column}, default \code{Family}); \code{species} then lists group names. See
+\code{\link[=stox_translation_table]{stox_translation_table()}} to export the lookup stored in an official project.
 \item \code{bootstrap}: \code{replicates} and \code{seed} (D-10), \code{impute_seed} (the seed of the imputation
 of super-individuals in the bootstrap; default: \code{seed}), and optionally \code{cores} (default:
 the machine's cores minus 2, at least 1, and not more than the replicates).
@@ -57,8 +65,8 @@ imputation of missing weights, as in many StoX projects); for the latter,
 \code{distribution_method} (\code{Equal} or \code{HaulDensity}) and \code{imputation} with \code{method}
 (\code{RandomSampling}), \code{levels} (any of \code{Haul}, \code{Stratum}, \code{Survey}), \code{at_missing}, \code{to_impute},
 \code{by_equal} (StoX variable names) and \code{seed}.
-\item \code{estimate}: \code{point}, \code{baseline} (default) or \code{bootstrap_mean}: which value is reported as the
-estimate.
+\item \code{estimate}: \code{point}, \code{bootstrap_mean} (default: the working assumption whenever a project has
+a bootstrap) or \code{baseline}: which value is reported as the estimate.
 \item \code{stox}: \code{version}, the RstoxFramework version the run must use.
 \item \code{disclosure}: \code{min_stations} and \code{min_positive}, at least 5 and 3 (D-03).
 }

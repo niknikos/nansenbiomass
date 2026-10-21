@@ -1,6 +1,27 @@
 # stox_report: StoX report tables to the Section 9 schema, and the support table
 # Data class touched: C0 in, C2 candidates out (staged, never released here).
 
+# StoX units (RstoxData::getUnitOptions()) and their factors to tonnes (mass) and to millions
+# of individuals (cardinality). Results from projects that report in different units are
+# made comparable with these; a unit not listed stops the conversion, it is never guessed.
+stox_unit_factors <- list(
+  biomass = c(mcg = 1e-12, mg = 1e-9, g = 1e-6, kg = 1e-3, ton = 1, kiloton = 1e3, megaton = 1e6),
+  abundance = c(individuals = 1e-6, "10^3 individuals" = 1e-3, "10^6 individuals" = 1,
+                "10^9 individuals" = 1e3, "10^12 individuals" = 1e6)
+)
+
+stox_unit_factor <- function(unit, quantity) {
+  known <- stox_unit_factors[[quantity]]
+  u <- trimws(as.character(unit))
+  bad <- unique(u[is.na(u) | !u %in% names(known)])
+  if (length(bad)) {
+    nb_abort("SX-UNIT-01", paste0("A ", quantity, " report states the unit '", paste(bad, collapse = "', '"),
+                                  "', which the package does not convert (known: ",
+                                  paste(names(known), collapse = ", "), ")."))
+  }
+  unname(known[u])
+}
+
 # StoX names a species category "<name>/<code>/<aphia>/<scientific name>". The
 # code is the element that matches one of the configured species codes.
 species_from_category <- function(category, codes) {
@@ -12,7 +33,7 @@ species_from_category <- function(category, codes) {
 
 # One report table as a plain data frame with `stratum` (or "total"),
 # `species_code` and the requested statistic columns.
-tidy_report <- function(dt, codes, stratum = NULL, cols) {
+tidy_report <- function(dt, codes, stratum = NULL, cols, quantity) {
   df <- as.data.frame(dt)
   # Totals are grouped by Survey; strata left out of the survey carry no label
   if ("Survey" %in% names(df)) df <- df[!is.na(df$Survey), , drop = FALSE]
@@ -21,10 +42,13 @@ tidy_report <- function(dt, codes, stratum = NULL, cols) {
     species_code = species_from_category(df$SpeciesCategory, codes),
     stringsAsFactors = FALSE
   )
+  # every report of the template states its unit; values are converted to tonnes or millions
+  if (!"Unit" %in% names(df)) nb_abort("SX-UNIT-02", "A StoX report of the template states no unit.")
+  factor <- stox_unit_factor(df$Unit, quantity)
   for (nm in names(cols)) {
     hit <- grep(cols[[nm]], names(df), value = TRUE)
     if (length(hit) != 1L) nb_abort("SX-REP-01", paste0("The StoX report has no unique column for ", nm, "."))
-    out[[nm]] <- as.numeric(df[[hit]])
+    out[[nm]] <- as.numeric(df[[hit]]) * factor
   }
   out[!is.na(out$species_code), , drop = FALSE]
 }
@@ -38,21 +62,18 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
                                       run_time = Sys.time(), unsampled = character(0)) {
   codes <- cfg$species
   units <- c(biomass = "tonnes", abundance = "millions")
-  # Catch-weight biomass is in kg; super-individual biomass is in grams
-  scale <- c(biomass = if (identical(cfg$biomass$method, "super_individuals")) 1e-6 else 1e-3,
-             abundance = 1e-6)
   from_bootstrap <- identical(cfg$estimate$point, "bootstrap_mean")
   rows <- lapply(cfg$quantities, function(qty) {
     Q <- c(biomass = "Biomass", abundance = "Abundance")[[qty]]
     get <- function(prefix, part) reports[[paste0(prefix, Q, part)]]
     base <- rbind(
-      tidy_report(get("Report", "ByStratum"), codes, cols = c(value = "_sum$")),
-      tidy_report(get("Report", "Total"), codes, stratum = "total", cols = c(value = "_sum$"))
+      tidy_report(get("Report", "ByStratum"), codes, cols = c(value = "_sum$"), quantity = qty),
+      tidy_report(get("Report", "Total"), codes, stratum = "total", cols = c(value = "_sum$"), quantity = qty)
     )
     boot_cols <- c(mean = "_sum_mean$", sd = "_sum_sd$", lower = "_sum_2\\.5%$", upper = "_sum_97\\.5%$")
     boot <- rbind(
-      tidy_report(get("ReportBootstrap", "ByStratum"), codes, cols = boot_cols),
-      tidy_report(get("ReportBootstrap", "Total"), codes, stratum = "total", cols = boot_cols)
+      tidy_report(get("ReportBootstrap", "ByStratum"), codes, cols = boot_cols, quantity = qty),
+      tidy_report(get("ReportBootstrap", "Total"), codes, stratum = "total", cols = boot_cols, quantity = qty)
     )
     m <- merge(base, boot, by = c("stratum", "species_code"), all.x = TRUE, sort = FALSE)
     m <- m[!is.na(m$value), , drop = FALSE]
@@ -79,11 +100,11 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
       stratum = m$stratum,
       method = "stox_sweptarea",
       quantity = qty,
-      value = (if (from_bootstrap) m$mean else m$value) * scale[[qty]],
+      value = if (from_bootstrap) m$mean else m$value,
       unit = units[[qty]],
       cv = ifelse(is.finite(m$mean) & m$mean > 0, m$sd / m$mean, NA_real_),
-      ci_lower = m$lower * scale[[qty]],
-      ci_upper = m$upper * scale[[qty]],
+      ci_lower = m$lower,
+      ci_upper = m$upper,
       ci_type = "bootstrap_percentile_95",
       config_hash = config_hash,
       code_version = code_version,
@@ -97,12 +118,14 @@ stox_reports_to_estimates <- function(reports, cfg, config_hash, code_version,
 # Stations and stations with a positive catch per stratum and configured species,
 # from the stations the estimate used (D-03). The strata of the configuration all
 # appear, with zero where nothing was kept.
-stox_support_table <- function(survey, keep, stratum, cfg) {
+stox_support_table <- function(survey, keep, stratum, cfg, groups = NULL) {
   kept_serial <- survey$station$serialnumber[keep]
   kept_stratum <- stratum[keep]
   catch <- survey$catch
   dplyr::bind_rows(lapply(cfg$species, function(sp) {
-    pos <- unique(catch$serialnumber[catch$catchcategory %in% sp & !is.na(catch$catchweight) &
+    # a species group counts a catch of any of its catch categories
+    codes <- if (is.null(groups)) sp else groups$value[groups$group == sp]
+    pos <- unique(catch$serialnumber[as.character(catch$catchcategory) %in% codes & !is.na(catch$catchweight) &
                                        catch$catchweight > 0])
     tibble::tibble(
       survey_id = cfg$survey$label, year = cfg$survey$year, species_code = sp,

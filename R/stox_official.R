@@ -250,55 +250,75 @@ print.nb_official_run <- function(x, ...) {
 #' Convert StoX report tables to a comparable table
 #'
 #' Turns the report outputs of a StoX project (for example from
-#' [stox_official_copy_run()]) into a table with one row per quantity, stratum
-#' (or `total`) and species category, with the baseline value or the bootstrap
-#' mean, SD, CV and percentile limits where the report has them. Only reports
-#' grouped by stratum, species category and survey are used; reports by length
-#' group are skipped. Values are multiplied by `scale`; StoX reports
-#' super-individual biomass in grams and abundance in numbers, so the default
-#' converts to tonnes and millions. Check the units of your project: a ratio far
-#' from 1 in [compare_estimates()] is the sign of a wrong scale.
+#' [stox_official_copy_run()] or [stox_saved_reports()]) into a table with one row per
+#' quantity, stratum (or `total`) and species category, with the baseline value or the
+#' bootstrap mean, SD, CV and percentile limits where the report has them. Only reports
+#' grouped by stratum, species category and survey are used; reports by length group are
+#' skipped.
+#'
+#' Values are converted to tonnes (biomass) and millions of individuals (abundance) from
+#' the unit each report states in its `Unit` column (StoX units such as `g`, `kg`, `ton`,
+#' `individuals` or `10^6 individuals`), so that projects reporting in different units are
+#' comparable. A unit the package does not know stops the conversion. A report without a
+#' `Unit` column (older projects) is converted with `scale`, and the table marks it
+#' (`unit_assumed`); check those against the project.
 #'
 #' @param reports A list of report tables (`data.frame`s).
-#' @param scale Named multipliers for `biomass` and `abundance`.
-#' @return A tibble with `process`, `kind` (`baseline` or `bootstrap`),
-#'   `quantity`, `stratum`, `species_category` and the value columns `baseline`,
-#'   `mean`, `sd`, `cv`, `lower` and `upper` that are present.
+#' @param scale Named multipliers for `biomass` and `abundance`, used only for reports
+#'   that state no unit. The default assumes grams and individuals, as older StoX
+#'   super-individual reports give.
+#' @return A tibble with `process`, `kind` (`baseline` or `bootstrap`), `quantity`,
+#'   `stratum`, `species_category`, `unit` (as reported, or `NA`), `unit_assumed`,
+#'   `interval` (the percentile interval in per cent, for example 95 or 90) and the value
+#'   columns `baseline`, `mean`, `sd`, `cv`, `lower` and `upper` that are present.
 #' @export
 #' @examples
-#' reports <- list(R = data.frame(Stratum = c("A", "B"), Biomass_sum = c(2e6, 3e6)))
+#' reports <- list(R = data.frame(Stratum = c("A", "B"), Biomass_sum = c(2, 3), Unit = "ton"))
 #' official_reports_to_table(reports)
 official_reports_to_table <- function(reports, scale = c(biomass = 1e-6, abundance = 1e-6)) {
-  stats <- c(baseline = "_sum$", mean = "_mean$", sd = "_sd$", cv = "_cv$",
-             lower = "_2\\.5%$", upper = "_97\\.5%$")
+  stats <- c(baseline = "_sum$", mean = "_mean$", sd = "_sd$", cv = "_cv$")
   rows <- lapply(names(reports), function(name) {
     df <- reports[[name]]
     if (!is.data.frame(df) || nrow(df) == 0L) return(NULL)
-    df <- as.data.frame(df)
+    df <- as.data.frame(df, check.names = FALSE)
     value_cols <- grep("^(Abundance|Biomass)_", names(df), value = TRUE)
-    groups <- setdiff(names(df), value_cols)
+    groups <- setdiff(names(df), c(value_cols, "Unit"))
     if (length(value_cols) == 0L || !all(groups %in% c("Stratum", "SpeciesCategory", "Survey"))) {
       return(NULL)
     }
     quantity <- tolower(sub("_.*$", "", value_cols[1]))
     if ("Survey" %in% names(df)) df <- df[!is.na(df$Survey), , drop = FALSE]
     if (nrow(df) == 0L) return(NULL)
+    has_unit <- "Unit" %in% names(df)
+    unit <- if (has_unit) as.character(df$Unit) else rep(NA_character_, nrow(df))
+    factor <- if (has_unit) stox_unit_factor(unit, quantity) else rep(scale[[quantity]], nrow(df))
     out <- data.frame(
       process = name,
       kind = if (any(grepl(stats[["mean"]], value_cols))) "bootstrap" else "baseline",
       quantity = quantity,
       stratum = if ("Stratum" %in% names(df)) as.character(df$Stratum) else "total",
       species_category = if ("SpeciesCategory" %in% names(df)) as.character(df$SpeciesCategory) else NA_character_,
+      unit = unit, unit_assumed = !has_unit,
       stringsAsFactors = FALSE
     )
     for (st in names(stats)) {
       hit <- grep(stats[[st]], value_cols, value = TRUE)
       if (length(hit) == 1L) {
-        out[[st]] <- as.numeric(df[[hit]]) * (if (st == "cv") 1 else scale[[quantity]])
+        out[[st]] <- as.numeric(df[[hit]]) * (if (st == "cv") 1 else factor)
       }
     }
+    # percentile limits: the lowest below and the highest above the median
+    pct_cols <- grep("_[0-9.]+%$", value_cols, value = TRUE)
+    pct <- as.numeric(sub("^.*_([0-9.]+)%$", "\\1", pct_cols))
+    if (any(pct < 50) && any(pct > 50)) {
+      lo <- pct_cols[which.min(pct)]; hi <- pct_cols[which.max(pct)]
+      out$lower <- as.numeric(df[[lo]]) * factor
+      out$upper <- as.numeric(df[[hi]]) * factor
+      out$interval <- max(pct) - min(pct)
+    }
     # a stratum where the species was not caught comes with an empty row: no information
-    has_value <- rowSums(!is.na(out[intersect(names(stats), names(out))])) > 0L
+    vals <- intersect(c(names(stats), "lower", "upper"), names(out))
+    has_value <- rowSums(!is.na(out[vals])) > 0L
     out[has_value, , drop = FALSE]
   })
   tibble::as_tibble(dplyr::bind_rows(rows))
@@ -362,7 +382,7 @@ print.nb_saved_reports <- function(x, ...) {
 #' @param x Our estimates (a Section 9 table), or a table from [official_reports_to_table()]
 #'   (then `species` is needed), for example the saved reports of the original project.
 #' @param reference A table from [official_reports_to_table()].
-#' @param reference_value `baseline` or `mean` (the bootstrap mean): which
+#' @param reference_value `mean` (the bootstrap mean, the default) or `baseline`: which
 #'   reference value to compare our `value` with.
 #' @param tolerance Relative tolerance for the flag `within`.
 #' @param replicates Number of bootstrap replicates behind the two bootstrap means (compared
@@ -379,8 +399,8 @@ print.nb_saved_reports <- function(x, ...) {
 #'                        value = c(2.01, 5.0), cv = c(0.2, 0.1))
 #' reference <- official_reports_to_table(list(R = data.frame(
 #'   Stratum = "A", SpeciesCategory = "n/SP1/NA/s", Biomass_sum = 2e6)))
-#' compare_estimates(ours, reference)
-compare_estimates <- function(x, reference, reference_value = c("baseline", "mean"), tolerance = 0.01,
+#' compare_estimates(ours, reference, "baseline")
+compare_estimates <- function(x, reference, reference_value = c("mean", "baseline"), tolerance = 0.01,
                               replicates = NULL, species = NULL) {
   reference_value <- match.arg(reference_value)
   kind <- if (reference_value == "mean") "bootstrap" else "baseline"
@@ -599,5 +619,76 @@ print.nb_strata <- function(x, ...) {
     cat("  included in the total:", paste(names(x$include_in_total), x$include_in_total, sep = "=", collapse = ", "), "\n")
   }
   if (isTRUE(x$written)) cat("  polygons written to the output file (attribute `stratum`)\n")
+  invisible(x)
+}
+
+#' Export the translation table stored in an official StoX project
+#'
+#' A StoX project that groups species (for example into families) keeps its lookup of catch
+#' categories to groups as process data of a `DefineTranslation` process, often with
+#' thousands of entries. This reads that table from the project's `process/project.json`
+#' and writes it as a CSV file in the data zone, for `species_groups.file` in the
+#' configuration. The table never leaves the data zone through this function: it prints the
+#' process, the number of rows and the column names only.
+#'
+#' @param project Path, relative to `root`, of the StoX project folder.
+#' @param out Path, relative to `root`, of the CSV file to write.
+#' @param process Name of the `DefineTranslation` process; by default the only one in the
+#'   project that holds a translation table.
+#' @param overwrite Replace an existing output file.
+#' @inheritParams read_survey
+#' @return An `nb_translation` (invisibly when written): the process, the number of rows,
+#'   the column names and the output path relative to `root`.
+#' @export
+#' @examples
+#' root <- tempfile("nansen-root-")
+#' dir.create(file.path(root, "p", "process"), recursive = TRUE)
+#' jsonlite::write_json(list(project = list(models = list(baseline = list(list(
+#'   processName = "DefineTranslation_SpeciesCategory",
+#'   functionName = "RstoxData::DefineTranslation",
+#'   processData = list(Translation = list(
+#'     list(SpeciesCategory = "SP1", NewValue = "FamA"),
+#'     list(SpeciesCategory = "SP2", NewValue = "FamA"))))))),
+#'   file.path(root, "p", "process", "project.json"), auto_unbox = TRUE)
+#' stox_translation_table("p", "lookups/families.csv", root = root)
+stox_translation_table <- function(project, out, process = NULL, root = data_root(), overwrite = FALSE) {
+  src <- resolve_data_path(project, root)
+  out_file <- resolve_data_path(out, root, must_exist = FALSE)
+  if (file.exists(out_file) && !isTRUE(overwrite)) {
+    nb_abort("SX-TRN-02", "The output file exists; use overwrite = TRUE to replace it.")
+  }
+  with_sanitised_errors(
+    {
+      file <- locate_stox_project_file(src)
+      if (!grepl("\\.json$", file)) nb_abort("SX-TRN-03", "Only StoX 3 or later projects (project.json) hold translation tables.")
+      j <- jsonlite::read_json(file, simplifyVector = FALSE)$project
+      procs <- unlist(lapply(j$models, function(m) m), recursive = FALSE)
+      is_tr <- vapply(procs, function(p) {
+        grepl("DefineTranslation", if (is.null(p$functionName)) "" else p$functionName) && length(p$processData$Translation) > 0L
+      }, logical(1))
+      if (!is.null(process)) is_tr <- is_tr & vapply(procs, function(p) identical(p$processName, process), logical(1))
+      if (sum(is_tr) == 0L) nb_abort("SX-TRN-01", "No DefineTranslation process with a stored translation table was found.")
+      if (sum(is_tr) > 1L) nb_abort("SX-TRN-04", paste0(sum(is_tr), " translation processes hold tables; name one with `process`."))
+      p <- procs[[which(is_tr)]]
+      rows <- lapply(p$processData$Translation, function(r) lapply(r, function(v) if (is.null(v)) NA_character_ else as.character(v)))
+      tab <- data.table::rbindlist(rows, fill = TRUE)
+      dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
+      data.table::fwrite(tab, out_file, quote = TRUE)
+      res <- structure(list(process = safe_field_names(p$processName), n_rows = nrow(tab),
+                            columns = safe_field_names(names(tab)), out = out), class = "nb_translation")
+      print(res)
+      invisible(res)
+    },
+    log_dir = file.path(root, "logs"),
+    code = "SX-TRN-05",
+    message = "The translation table could not be exported."
+  )
+}
+
+#' @export
+print.nb_translation <- function(x, ...) {
+  cat("<nb_translation> counts and column names only; the table is in the data zone\n")
+  cat("  process:", x$process, "\n  rows:   ", x$n_rows, "\n  columns:", paste(x$columns, collapse = ", "), "\n")
+  cat("  written:", x$out, "\n")
   invisible(x)
 }
