@@ -502,6 +502,12 @@ missed the path a person uses. Fixed: every known section is kept, an unknown se
 StoX's translation uses the first row for such a code (verified on StoX 4.2.1 with synthetic data), so the
 package now does the same, in the order of the project's table, and says how many codes were affected.
 
+**Survey B, baseline reproduced (21 October 2026; ratios only).** With the family lookup applied, our
+baseline biomass against the 4.2.1 rerun of the official project: ratio 1.000 for every compared cell, by
+stratum and for the total of each of the 16 families present in both tables. The tow-time rule, the family
+grouping (first group for a code listed twice), the catch-weight route and the stated units (tonnes) are
+therefore those of the official project. The bootstrap comparison (500 replicates) follows.
+
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit
 (`ton`, `10^6 individuals`), and our reports and official ones are converted by the unit they state, from
