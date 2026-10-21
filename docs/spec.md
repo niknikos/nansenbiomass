@@ -350,7 +350,7 @@ All seventeen decisions are settled.
 | D-08 | Pilot surveys | One or two well-sampled demersal surveys with official StoX estimates and clear permissions will not be provided. Any comparisons will be made by the developer manually. | Decided |
 | D-09 | Station inclusion rules and swept width | Replicate the rules behind the official estimates | Decided |
 | D-10 | Bootstrap replicates and seed | Match the official runs; fix and record the seed | Decided |
-| D-11 | Reproduction tolerance | Point estimates identical to reporting precision; CVs within bootstrap noise | Decided |
+| D-11 | Reproduction tolerance | Point estimates identical to reporting precision; CVs within bootstrap noise. Refined 21 October 2026 after the first reproduction: baseline (deterministic) values must be reproduced exactly; bootstrap means, which an independent run cannot reproduce draw for draw, must agree within Monte Carlo noise, judged by the difference in units of its expected standard error (\|z\| below about 2, as `compare_estimates(replicates = )` reports); CVs likewise within bootstrap noise | Decided |
 | D-12 | sdmTMB error family | Fit Tweedie and delta-gamma; choose on residuals and cross-validation; report the sensitivity | Decided |
 | D-13 | Mesh cutoff and grid resolution | Alternative solution since pilot surveys will not be provided: a built-in sensitivity routine refits each real survey over a small set of mesh cutoffs and grid resolutions, releases the index sensitivity as a C2 diagnostic and applies a pre-agreed selection rule; defaults calibrated on synthetic surveys | Decided |
 | D-14 | Divergence threshold between frameworks | Flag when intervals do not overlap or the ratio falls outside a pre-agreed band | Decided |
