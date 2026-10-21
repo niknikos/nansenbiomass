@@ -932,6 +932,73 @@ test_that("the translation table of an official project is exported to the data 
   expect_error(stox_translation_table("p", "lookups/g.csv", process = "Nope", root = root), "SX-TRN-01")
 })
 
+# An official-like project: one built by the template, with its filter rewritten the way an
+# official project writes it, and the biotic file in the project's input folder.
+official_like_project <- function(s, extra_clause = NULL) {
+  cfg <- quick_config(2L)
+  res <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st0")))
+  dir.create(file.path(s$root, "stox_official"), showWarnings = FALSE)
+  dest <- file.path(s$root, "stox_official", "proj")
+  file.copy(res$project_path, file.path(s$root, "stox_official"), recursive = TRUE)
+  file.rename(file.path(s$root, "stox_official", basename(res$project_path)), dest)
+  dir.create(file.path(dest, "input", "biotic"), recursive = TRUE, showWarnings = FALSE)
+  file.copy(file.path(s$root, "surveys", "synthetic-seed1.xml"), file.path(dest, "input", "biotic"))
+  jf <- file.path(dest, "process", "project.json")
+  j <- jsonlite::read_json(jf, simplifyVector = FALSE)
+  keys <- synthetic_station_keys(s$root)[1:2]
+  gear <- unique(s$sv$survey$station$gear)
+  expr <- paste0("gear %in% c(", paste0("\"", gear, "\"", collapse = ", "), ") & gearcondition %in% c(\"1\", \"2\") & ",
+                 "samplequality %in% \"12\" & soaktime >= 0.25", if (!is.null(extra_clause)) paste0(" & ", extra_clause))
+  for (i in seq_along(j$project$models$baseline)) {
+    p <- j$project$models$baseline[[i]]
+    if (identical(p$processName, "FilterStoxBiotic")) {
+      j$project$models$baseline[[i]]$functionParameters$FilterExpression <- list(
+        Haul = expr, Station = paste0("Station %notin% c('", keys[1], "', '", keys[2], "')"))
+    }
+  }
+  jsonlite::write_json(j, jf, auto_unbox = TRUE, digits = NA, pretty = TRUE)
+  "stox_official/proj"
+}
+
+test_that("stox_config_from_project() drafts a configuration that read_config() accepts", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  proj <- official_like_project(s)
+  out <- file.path(s$root, "configs", "drafted.yml")
+  shown <- utils::capture.output(draft <- suppressWarnings(
+    stox_config_from_project(proj, name = "synth", out = out, root = s$root)))
+  expect_s3_class(draft, "nb_config_draft")
+  expect_true(draft$valid)
+  expect_length(draft$unresolved, 0L)
+  cfg <- read_config(out)
+  expect_equal(cfg$inclusion$gear, unique(as.character(s$sv$survey$station$gear)))
+  expect_equal(cfg$inclusion$gearcondition, c("1", "2"))
+  expect_equal(cfg$inclusion$samplequality, "12")
+  expect_equal(cfg$inclusion$soaktime_min, 0.25)
+  expect_equal(cfg$inclusion$exclude_stations_file, "exclusions/synth.txt")
+  expect_equal(readLines(file.path(s$root, "exclusions", "synth.txt"))[-1], c("90001", "90002"))
+  expect_setequal(cfg$species, c("SYN001", "SYN002", "SYN003"))
+  expect_equal(cfg$swept_width$fixed_m, 20)
+  expect_equal(cfg$biomass$method, "total_catch")
+  expect_equal(cfg$data$biotic, "stox_official/proj/input/biotic/synthetic-seed1.xml")
+  expect_true(file.exists(file.path(s$root, "strata", "synth.geojson")))
+  expect_equal(cfg$bootstrap$replicates, 2L)
+  # the draft runs, and nothing station-level was printed
+  res <- suppressWarnings(suppressMessages(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st1"))))
+  expect_gt(sum(res$support$n_stations), 0L)
+  printed <- paste(c(shown, utils::capture.output(print(draft))), collapse = "\n")
+  expect_false(grepl("9000[12]|SYN0", printed))
+  # a clause the rules cannot reproduce is listed, by field name only
+  s2 <- synthetic_root()
+  proj2 <- official_like_project(s2, extra_clause = "bottomdepthstart > 50")
+  d2 <- suppressWarnings(stox_config_from_project(proj2, name = "synth2",
+                                                  out = file.path(s2$root, "c.yml"), root = s2$root))
+  expect_true(any(grepl("bottomdepthstart", d2$unresolved)))
+  expect_false(any(grepl("50", d2$unresolved)))
+  expect_error(stox_config_from_project(proj2, name = "synth2", out = file.path(s2$root, "c.yml"), root = s2$root),
+               "SX-DRAFT-03")
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))
