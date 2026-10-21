@@ -999,6 +999,32 @@ test_that("stox_config_from_project() drafts a configuration that read_config() 
                "SX-DRAFT-03")
 })
 
+test_that("reproduce_official() runs the whole sequence and reports ratios only", {
+  skip_if_no_stox()
+  s <- synthetic_root()
+  # the "official" project: one built by the template, with the same configuration
+  cfg <- quick_config(3L)
+  cfg$estimate$point <- "bootstrap_mean"
+  built <- suppressWarnings(run_estimate(cfg, root = s$root, staging_dir = file.path(s$root, "st0")))
+  dir.create(file.path(s$root, "stox_official"))
+  file.copy(built$project_path, file.path(s$root, "stox_official"), recursive = TRUE)
+  proj <- file.path("stox_official", basename(built$project_path))
+  rep <- suppressWarnings(suppressMessages(reproduce_official(cfg, proj, root = s$root, quick_replicates = 2L)))
+  expect_s3_class(rep, "nb_reproduction")
+  expect_match(rep$verdict, "^consistent with D-11")
+  expect_true(all(abs(rep$baseline_comparison$ratio - 1) < 1e-6, na.rm = TRUE))
+  expect_true(file.exists(rep$file))
+  txt <- paste(rep$report, collapse = "\n")
+  expect_match(txt, "Baseline \\(deterministic")
+  expect_false(grepl("9000[0-9]|/tmp|Rtmp", txt))
+  # a configuration that does not match: the run stops after the baseline
+  wrong <- cfg; wrong$swept_width$fixed_m <- 25
+  rep2 <- suppressWarnings(suppressMessages(reproduce_official(wrong, proj, root = s$root, quick_replicates = 2L)))
+  expect_match(rep2$verdict, "^not reproduced")
+  expect_null(rep2$estimate)
+  expect_match(paste(rep2$report, collapse = "\n"), "STOPPED")
+})
+
 test_that("a bad exclusion file or path is refused without echoing its content", {
   s <- synthetic_root()
   dir.create(file.path(s$root, "exclusions"))

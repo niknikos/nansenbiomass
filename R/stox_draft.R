@@ -347,3 +347,139 @@ print.nb_config_draft <- function(x, ...) {
   }
   invisible(x)
 }
+
+# ---- One call: reproduce an official project -------------------------------------------
+
+repro_fmt <- function(x, digits = 3) ifelse(is.na(x), "NA", formatC(signif(x, digits), digits = digits, format = "fg"))
+
+#' Reproduce an official StoX project in one call
+#'
+#' Runs the whole reproduction of an official project on the laptop and reports it on one page,
+#' for a person to read and pass on. The steps, in an order that spends no time on a
+#' configuration that does not match:
+#'
+#' 1. the inclusion counts ([inclusion_summary()]);
+#' 2. our estimate with the baseline as the point estimate and a few replicates (fast);
+#' 3. a copy of the official project rerun under the installed StoX ([stox_official_copy_run()]),
+#'    with the replicates of the configuration;
+#' 4. the baseline comparison, which has no randomness and must be exact: if it is not, the run
+#'    stops here and the report says so;
+#' 5. our full estimate, with the configuration's replicates and point estimate;
+#' 6. the comparison of bootstrap means, with `z` in units of the Monte Carlo error.
+#'
+#' The report holds counts, ratios and `z` values only, never estimates, station identifiers or
+#' positions, and closes with a reading against D-11 (baseline values exact; bootstrap means within
+#' Monte Carlo noise). The reading is a summary for the person, who decides. The report is also
+#' saved as a text file in the data zone (`reproduction/`), and the full objects are returned for
+#' further checks on the laptop.
+#'
+#' @param config A configuration file or an object from [read_config()].
+#' @param project Path, relative to `root`, of the official StoX project folder.
+#' @param quick_replicates Replicates of the fast baseline run (step 2).
+#' @param cores Cores for the official rerun; by default the project's own setting.
+#' @inheritParams read_survey
+#' @return An `nb_reproduction`: `report` (the lines printed), `verdict`, and the objects behind it
+#'   (`inclusion`, `baseline_run`, `official`, `baseline_comparison`, `estimate`, `comparison`).
+#' @export
+#' @examples
+#' \dontrun{
+#' rep <- reproduce_official("configs/survey-B.yml", "stox_official/<project folder>")
+#' }
+reproduce_official <- function(config, project, root = data_root(), quick_replicates = 3L, cores = NULL) {
+  cfg <- if (inherits(config, "nb_config")) config else read_config(config)
+  n <- cfg$bootstrap$replicates
+  step <- function(i, what) message(sprintf("Step %d of 6: %s", i, what))
+  out <- list()
+
+  step(1, "inclusion counts")
+  out$inclusion <- inclusion_summary(cfg, root = root)
+
+  step(2, "our baseline run (fast)")
+  cfg_b <- cfg
+  cfg_b$estimate$point <- "baseline"
+  cfg_b$bootstrap$replicates <- as.integer(quick_replicates)
+  out$baseline_run <- suppressMessages(run_estimate(cfg_b, root = root))
+
+  step(3, "the official project, rerun under the installed StoX (the longest step)")
+  out$official <- stox_official_copy_run(project, root = root, replicates = n, cores = cores)
+  ref <- official_reports_to_table(out$official$reports)
+
+  step(4, "baseline comparison")
+  out$baseline_comparison <- tryCatch(compare_estimates(out$baseline_run$estimates, ref, "baseline"),
+                                      error = function(e) NULL)
+  cb <- out$baseline_comparison
+  base_ok <- is.null(cb) || all(is.na(cb$ratio) | abs(cb$ratio - 1) < 1e-6)
+
+  if (base_ok) {
+    step(5, "our full run")
+    out$estimate <- run_estimate(cfg, root = root)
+    step(6, "comparison of bootstrap means")
+    out$comparison <- tryCatch(compare_estimates(out$estimate$estimates, ref, "mean", replicates = c(n, n)),
+                               error = function(e) NULL)
+  }
+
+  # The report: counts, ratios and z only
+  label <- if (!is.null(out$baseline_run$estimates$survey_id)) out$baseline_run$estimates$survey_id[1] else cfg$survey$label
+  r <- out$inclusion$rules
+  bs <- out$inclusion$by_stratum
+  lines <- c(
+    sprintf("Reproduction of %s (survey %s), %s", basename(project), label, format(Sys.time(), "%Y-%m-%d %H:%M")),
+    sprintf("Configuration hash %s; %d replicates on both sides", attr(cfg, "config_hash"), n),
+    "", "Inclusion (stations):",
+    sprintf("  %-45s %5d -> %5d", r$rule, r$n_before, r$n_after),
+    sprintf("  strata: %d, with stations: %d, without: %d", nrow(bs), sum(bs$n_kept > 0), sum(bs$n_kept == 0))
+  )
+  if (any(ref$unit_assumed)) lines <- c(lines, "  note: some official reports state no unit; their scale was assumed")
+  lines <- c(lines, "", "Baseline (deterministic; must be exact):")
+  if (is.null(cb)) {
+    lines <- c(lines, "  the official project has no baseline report to compare with")
+  } else {
+    dev <- abs(cb$ratio - 1)
+    lines <- c(lines, sprintf("  cells compared: %d, exact: %d, largest deviation: %s",
+                              sum(!is.na(cb$ratio)), sum(dev < 1e-6, na.rm = TRUE),
+                              repro_fmt(max(c(0, dev), na.rm = TRUE))))
+  }
+  cm <- out$comparison
+  if (!base_ok) {
+    lines <- c(lines, "  STOPPED: the baseline differs, so the configuration does not yet match the project.")
+    verdict <- "not reproduced: the baseline differs"
+  } else if (is.null(cm)) {
+    lines <- c(lines, "", "Bootstrap means: the official project has no bootstrap report to compare with")
+    verdict <- if (is.null(cb)) "not checked: nothing to compare" else "baseline reproduced; no bootstrap to compare"
+  } else {
+    z <- cm$z[!is.na(cm$z)]
+    share <- if (length(z)) mean(abs(z) < 2) else NA_real_
+    tot <- cm[cm$stratum == "total", , drop = FALSE]
+    lines <- c(lines, "", "Bootstrap means (within Monte Carlo noise if |z| < about 2):",
+               sprintf("  cells with z: %d, |z| < 2: %s%%, mean z: %s, range: %s to %s", length(z),
+                       if (is.finite(share)) sprintf("%.0f", 100 * share) else "NA", repro_fmt(if (length(z)) mean(z) else NA),
+                       repro_fmt(if (length(z)) min(z) else NA), repro_fmt(if (length(z)) max(z) else NA)),
+               "  totals (species or group, quantity, ratio, z, CV ratio):",
+               sprintf("    %-22s %-9s %8s %8s %8s", tot$species_code, tot$quantity, repro_fmt(tot$ratio),
+                       repro_fmt(tot$z), repro_fmt(tot$cv_ratio)))
+    worst <- suppressWarnings(max(abs(tot$z), na.rm = TRUE))
+    verdict <- if (is.finite(share) && share >= 0.9 && (!is.finite(worst) || worst <= 3)) {
+      "consistent with D-11: baseline exact, bootstrap means within Monte Carlo noise"
+    } else {
+      "needs review: bootstrap means outside the noise expected under D-11"
+    }
+  }
+  if (!is.null(out$estimate)) {
+    lines <- c(lines, "", sprintf("Airlock: full export %s, total-only export %s", out$estimate$staged$outcome,
+                                  if (is.null(out$estimate$staged_total_only)) "not needed" else out$estimate$staged_total_only$outcome))
+  }
+  lines <- c(lines, "", paste("Reading:", verdict), "The person running the comparison decides whether it is accepted.")
+
+  dir <- file.path(root, "reproduction")
+  dir.create(dir, recursive = TRUE, showWarnings = FALSE)
+  file <- file.path(dir, paste0(gsub("[^A-Za-z0-9._-]", "_", label), "-", format(Sys.time(), "%Y%m%dT%H%M%S"), ".txt"))
+  writeLines(lines, file)
+  structure(c(list(report = lines, verdict = verdict, file = file), out), class = "nb_reproduction")
+}
+
+#' @export
+print.nb_reproduction <- function(x, ...) {
+  cat(x$report, sep = "\n")
+  cat("\n(saved in the data zone)\n")
+  invisible(x)
+}
