@@ -999,6 +999,24 @@ test_that("stox_config_from_project() drafts a configuration that read_config() 
                "SX-DRAFT-03")
 })
 
+test_that("a sparse project gives a draft that lists what is missing, without failing", {
+  skip_if_no_stox()
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "official", "process"), recursive = TRUE)
+  jsonlite::write_json(list(project = list(
+    RstoxPackageVersion = list("RstoxFramework_4.2.1"),
+    models = list(baseline = list(
+      list(processName = "SweptAreaDensity", functionName = "RstoxBase::SweptAreaDensity",
+           functionParameters = list(SweptAreaDensityMethod = "TotalCatch", SweepWidthMethod = "Constant", SweepWidth = 20)),
+      list(processName = "SpeciesCategoryCatch", functionName = "RstoxBase::SpeciesCategoryCatch")
+    )))), file.path(root, "official", "process", "project.json"), auto_unbox = TRUE)
+  d <- suppressWarnings(stox_config_from_project("official", out = file.path(root, "d.yml"), root = root))
+  expect_false(d$valid)
+  expect_true(any(grepl("biotic", d$unresolved)))
+  expect_true(any(grepl("species", d$unresolved)))
+  expect_true(any(grepl("strata", d$unresolved)))
+})
+
 test_that("reproduce_official() runs the whole sequence and reports ratios only", {
   skip_if_no_stox()
   s <- synthetic_root()

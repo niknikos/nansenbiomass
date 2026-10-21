@@ -196,7 +196,7 @@ stox_config_from_project <- function(project, name = NULL, out = NULL, replicate
       tr_i <- which(funs == "DefineTranslation" & vapply(procs, function(p) {
         identical(as.character(unlist(par(p)$VariableName)), "SpeciesCategory")
       }, logical(1)))
-      species_values <- unique(unlist(lapply(species_expr, draft_literals)))
+      species_values <- unique(as.character(unlist(lapply(species_expr, draft_literals))))
       groups <- NULL
       if (redefine && length(tr_i) == 1L) {
         tp <- procs[[tr_i]]
@@ -222,6 +222,7 @@ stox_config_from_project <- function(project, name = NULL, out = NULL, replicate
         # StoX names a category "<name>/<catch category>/<aphia>/<scientific name>"
         species <- unique(vapply(strsplit(species_values, "/", fixed = TRUE),
                                  function(x) if (length(x) >= 2L) x[2] else x[1], character(1)))
+        species <- as.character(species)
       }
       if (length(species) == 0L) note("no species filter found; set species by hand")
       decide("species", sprintf("%d %s", length(species), if (is.null(groups)) "species" else "groups"))
