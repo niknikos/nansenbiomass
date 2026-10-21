@@ -513,6 +513,16 @@ Many cells agree almost exactly (quartiles of z within about +-0.3), so here the
 same resamples, unlike survey A (made with StoX 3.4); that the version or the project structure decides
 whether the draws coincide is an interpretation, not established. Survey B is reproduced under D-11.
 
+**Two calls per new project (21 October 2026).** To cut the back-and-forth of the first two surveys, a new
+official project now takes two calls on the laptop. `stox_config_from_project(project)` drafts the
+configuration from the project's settings (filters including tow time and exclusion lists, species or
+groups with the stored lookup exported, strata exported, the project's own biotic file, route, sweep width,
+seeds, replicates, interval) and prints settings only, with the points a person must settle.
+`reproduce_official(config, project)` runs inclusion counts, a fast baseline run, the official rerun, the
+exact baseline comparison (stopping if it differs), the full run and the bootstrap comparison, and prints
+one report of counts, ratios and z with a reading against D-11, saved in the data zone. The person passes
+on the two printouts; Claude never runs code on the real data (CLAUDE.md, rule 3).
+
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit
 (`ton`, `10^6 individuals`), and our reports and official ones are converted by the unit they state, from
