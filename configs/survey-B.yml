@@ -40,7 +40,7 @@ biomass:
   method: total_catch        # SpeciesCategoryCatch, SweptAreaDensity TotalCatch / AreaWeightDensity
 bootstrap:
   replicates: 500            # as the project
-  seed: 1                    # to confirm: the seed of the project's bootstrap
+  seed: 5                    # BootstrapMethodTable of the project
   interval: 90               # the project reports the 5% and 95% percentiles
 estimate:
   point: bootstrap_mean
