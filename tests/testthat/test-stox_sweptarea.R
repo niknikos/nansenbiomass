@@ -960,6 +960,26 @@ official_like_project <- function(s, extra_clause = NULL) {
   "stox_official/proj"
 }
 
+test_that("strata read from a project's process data keep their full precision", {
+  root <- withr::local_tempdir()
+  dir.create(file.path(root, "p", "process"), recursive = TRUE)
+  ring <- list(list(10.123456789, -20.987654321), list(10.523456789, -20.987654321),
+               list(10.523456789, -20.487654321), list(10.123456789, -20.487654321),
+               list(10.123456789, -20.987654321))
+  fc <- list(type = "FeatureCollection", features = list(list(
+    type = "Feature", properties = list(polygonName = "S1"),
+    geometry = list(type = "Polygon", coordinates = list(ring)))))
+  jsonlite::write_json(list(project = list(models = list(baseline = list(list(
+    processName = "DefineStratumPolygon", functionName = "RstoxBase::DefineStratumPolygon",
+    processData = list(StratumPolygon = fc)))))), file.path(root, "p", "process", "project.json"),
+    auto_unbox = TRUE, digits = NA)
+  st <- stox_strata("p", root = root, out = "strata/s.geojson")
+  back <- sf::st_read(file.path(root, "strata", "s.geojson"), quiet = TRUE)
+  xy <- sf::st_coordinates(back)
+  expect_equal(unique(xy[, "X"]), c(10.123456789, 10.523456789), tolerance = 1e-12)
+  expect_equal(unique(xy[, "Y"]), c(-20.987654321, -20.487654321), tolerance = 1e-12)
+})
+
 test_that("stox_config_from_project() drafts a configuration that read_config() accepts", {
   skip_if_no_stox()
   s <- synthetic_root()

@@ -474,7 +474,8 @@ print.nb_comparison <- function(x, ...) {
 find_feature_collection <- function(x) {
   if (!is.list(x)) return(NULL)
   if (identical(x$type, "FeatureCollection") && length(x$features)) {
-    text <- jsonlite::toJSON(x, auto_unbox = TRUE, null = "null")
+    # full precision: toJSON() rounds to 4 decimals by default, about 11 m in degrees
+    text <- jsonlite::toJSON(x, auto_unbox = TRUE, null = "null", digits = NA)
     out <- tryCatch(suppressWarnings(sf::st_read(as.character(text), quiet = TRUE)), error = function(e) NULL)
     if (!is.null(out)) return(out)
   }
@@ -597,7 +598,8 @@ stox_strata <- function(path, root = data_root(), label = NULL, out = NULL, over
         if (is.na(sf::st_crs(o))) sf::st_crs(o) <- 4326
         o <- sf::st_transform(o, 4326)
         dir.create(dirname(out_file), recursive = TRUE, showWarnings = FALSE)
-        sf::st_write(o, out_file, quiet = TRUE, delete_dsn = file.exists(out_file))
+        sf::st_write(o, out_file, quiet = TRUE, delete_dsn = file.exists(out_file),
+                     layer_options = "COORDINATE_PRECISION=15")
       }
       structure(list(source = found$source, label = label, names = nm, attributes = text_cols,
                      include_in_total = include, written = !is.null(out_file)),

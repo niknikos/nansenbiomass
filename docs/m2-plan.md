@@ -504,7 +504,10 @@ package now does the same, in the order of the project's table, and says how man
 
 **Survey B, baseline reproduced (21 October 2026; ratios only).** With the family lookup applied, our
 baseline biomass against the 4.2.1 rerun of the official project: ratio 1.000 for every compared cell, by
-stratum and for the total of each of the 16 families present in both tables. The tow-time rule, the family
+stratum and for the total of each of the 16 families present in both tables. Correction (22 October 2026): those ratios
+were read at three decimals; the strata of survey B came through `stox_strata()`, which then rounded
+coordinates from process data to 4 decimals (see below), so survey B's baseline was most likely not exact
+to the last digit either, and is to be rechecked with the exact comparison of `reproduce_official()`. The tow-time rule, the family
 grouping (first group for a code listed twice), the catch-weight route and the stated units (tonnes) are
 therefore those of the official project. Ariommatidae and Soleidae were not caught at the stations used:
 zero in our table, no row in the official one. Bootstrap means, 500 replicates on both sides: 99% of cells
@@ -522,6 +525,14 @@ seeds, replicates, interval) and prints settings only, with the points a person 
 exact baseline comparison (stopping if it differs), the full run and the bootstrap comparison, and prints
 one report of counts, ratios and z with a reading against D-11, saved in the data zone. The person passes
 on the two printouts; Claude never runs code on the real data (CLAUDE.md, rule 3).
+
+**Survey C and a precision defect in the strata export (22 October 2026).** `reproduce_official()` on the
+third project (*Merluccius polli*, made with StoX 3.6.2, catch-weight biomass) stopped at the baseline:
+one cell (the biomass total), relative deviation 2.3e-5. The stratum areas of our run and the official
+rerun differed by up to 2e-4 in individual strata. Cause: `stox_strata()` passed polygons from process data
+through `jsonlite::toJSON()`, whose default rounds numbers to 4 decimals (about 11 m in degrees). Fixed
+(`digits = NA`, and GeoJSON written with 15 significant digits), with a test that fails on the old code.
+Survey A was not affected (its strata came from a WKT file).
 
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit
