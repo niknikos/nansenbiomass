@@ -534,6 +534,17 @@ through `jsonlite::toJSON()`, whose default rounds numbers to 4 decimals (about 
 (`digits = NA`, and GeoJSON written with 15 significant digits), with a test that fails on the old code.
 Survey A was not affected (its strata came from a WKT file).
 
+**Surveys B and C reproduced with reproduce_official() (22 October 2026; counts, ratios and z only).**
+After the strata were re-exported at full precision:
+- *Survey C* (*Merluccius polli*, StoX 3.6.2, catch weights, 1000 replicates): 159 stations, 156 inside the
+  21 strata, all sampled. Baseline: 1 cell, exact. Bootstrap: 13 cells, every z = 0 and every ratio 1, so the
+  two runs drew identical resamples. Consistent with D-11.
+- *Survey B* (families, StoX 4.2.0, 500 replicates): baseline 101 cells, all exact (the correction above is
+  confirmed). Bootstrap: 99% of 101 cells with |z| < 2, mean z 0.09, range -2.6 to 1.9; family totals 0.957 to
+  1.06. Consistent with D-11. The total-only export fails the airlock: some family totals rest on fewer than
+  3 positive stations (D-03), so the all-or-nothing staging releases nothing; a per-species fallback is a
+  decision for the project lead.
+
 **Units and the point estimate (decisions of the project lead, 21 October 2026).** Results from projects
 that report in different units must be comparable. Every report of the template now states its unit
 (`ton`, `10^6 individuals`), and our reports and official ones are converted by the unit they state, from
